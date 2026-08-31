@@ -7,13 +7,16 @@
 4.后台管理：管理员可发布自己的朋友圈内容，管理所有的朋友圈内容，设置分类，管理用户和评论，设置评论违禁词以及IP黑名单，设置管理员信息，发信功能以及站点设置；
 5.更多功能持续更新中，bug或者建议可反馈到QQ825703967；
 # 前台页面
+
 <img width="1259" height="1420" alt="image" src="https://github.com/user-attachments/assets/7a5f3262-4e05-4935-8ef5-c37ed6ac1f8d" />
 # 用户页面
+
 <img width="1157" height="517" alt="image" src="https://github.com/user-attachments/assets/e885e872-f4d9-4be6-9132-e1a9a079d470" />
 <img width="1149" height="774" alt="image" src="https://github.com/user-attachments/assets/ac0e88f9-8f19-47be-91a6-c29b73c61ca1" />
 <img width="1154" height="450" alt="image" src="https://github.com/user-attachments/assets/309a8cdd-5445-4164-b15b-62c668cc0375" />
 <img width="1225" height="768" alt="image" src="https://github.com/user-attachments/assets/7eff8a9c-e00d-45b8-a64c-9b3641c01798" />
 # 后台页面
+
 <img width="2545" height="1406" alt="image" src="https://github.com/user-attachments/assets/c484ef3f-6240-460b-af39-1a18d5a7c06b" />
 <img width="2542" height="1410" alt="image" src="https://github.com/user-attachments/assets/cacaba91-7743-46b6-90df-806841052129" />
 <img width="2539" height="1409" alt="image" src="https://github.com/user-attachments/assets/2c311d01-09c5-40d1-98e4-af211a8118dc" />
