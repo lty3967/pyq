@@ -285,5 +285,5 @@ user_flash();
 <script>
     window.WM_USER = <?= ejs(['token' => wm_csrf_token()]) ?>;
 </script>
-<script src="../assets/js/user.js?v=<?= e(WM_VERSION) ?>"></script>
+<script src="../assets/js/user.js?v=<?= e(WM_ASSET_VER) ?>"></script>
 <?php user_foot();

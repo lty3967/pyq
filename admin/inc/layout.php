@@ -39,6 +39,7 @@ function wm_menu(): array
             ['profile.php', '管理员信息', 'user-round'],
             ['mail.php', '发信功能', 'send'],
             ['settings.php', '站点设置', 'settings-2'],
+            ['update.php', '在线更新', 'refresh-cw'],
             ['logs.php', '操作日志', 'scroll-text'],
         ]],
     ];
@@ -63,7 +64,8 @@ function wm_head(string $pageTitle): void
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <title><?= e($pageTitle) ?> - 后台管理</title>
-<link rel="stylesheet" href="../assets/css/admin.css?v=<?= e(WM_VERSION) ?>">
+<link rel="stylesheet" href="../assets/css/admin.css?v=<?= e(WM_ASSET_VER) ?>">
+<?php wm_favicon_link('../'); ?>
 <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
 </head>
 <body>
@@ -114,7 +116,7 @@ function wm_foot(): void
 </div>
 <div class="mask" id="mask"></div>
 <script>window.WMA = <?= ejs(['token' => wm_csrf_token()]) ?>;</script>
-<script src="../assets/js/admin.js?v=<?= e(WM_VERSION) ?>"></script>
+<script src="../assets/js/admin.js?v=<?= e(WM_ASSET_VER) ?>"></script>
 <script>document.addEventListener('DOMContentLoaded',function(){if(window.lucide){window.lucide.createIcons({attrs:{'stroke-width':1.8}});}});</script>
 </body>
 </html>

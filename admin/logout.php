@@ -18,12 +18,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <title>退出登录 - <?= e((string)wm_setting('site_name', '朋友圈')) ?></title>
-<link rel="stylesheet" href="../assets/css/admin.css?v=<?= e(WM_VERSION) ?>">
+<link rel="stylesheet" href="../assets/css/admin.css?v=<?= e(WM_ASSET_VER) ?>">
+<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
 </head>
 <body class="login-body">
 <div class="login-box">
   <div class="lb-head">
-    <div class="lb-logo"><span style="font-size:26px">⏻</span></div>
+    <div class="lb-logo"><i data-lucide="log-out" aria-hidden="true"></i></div>
     <h1>退出登录</h1>
     <p>确认要退出后台吗？</p>
   </div>
@@ -33,5 +34,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   </form>
   <div class="lb-foot"><a href="index.php">← 返回控制台</a></div>
 </div>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        if (window.lucide) { window.lucide.createIcons({ attrs: { 'stroke-width': 1.8 } }); }
+    });
+</script>
 </body>
 </html>

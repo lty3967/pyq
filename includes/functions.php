@@ -171,13 +171,39 @@ function wm_size(float $bytes, int $dec = 2): string
     return round($bytes, $dec) . ' ' . $units[$i];
 }
 
-/** 安全重定向：仅允许站内相对路径 */
+/** 安全重定向：仅允许站内相对路径；统一补全为绝对 URL，避免个别 HTTP/2/CDN 环境对相对 Location 处理出错 */
 function wm_redirect(string $path): void
 {
     if (preg_match('#^(https?:)?//#i', $path) || strpos($path, "\r") !== false || strpos($path, "\n") !== false) {
         $path = 'index.php';
     }
+    // 相对路径补全为基于当前脚本目录的绝对 URL（部分 HTTP/2/CDN 环境对相对 Location 处理异常）
+    if (!preg_match('#^[a-z][a-z0-9+.\-]*://#i', $path)) {
+        $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https')
+            || (($_SERVER['SERVER_PORT'] ?? '') === '443') ? 'https' : 'http';
+        $host = preg_match('/^[A-Za-z0-9.\-:\[\]]{1,255}$/', $_SERVER['HTTP_HOST'] ?? '')
+            ? $_SERVER['HTTP_HOST'] : ($_SERVER['SERVER_NAME'] ?? 'localhost');
+        $dir = rtrim((string)dirname($_SERVER['SCRIPT_NAME'] ?? '/'), '/');
+        $path = $scheme . '://' . $host . ($path[0] === '/' ? $path : $dir . '/' . $path);
+    }
+    // 若响应头已经发出（意外提前输出了内容），用 meta/JS 兜底跳转，避免返回损坏响应
+    if (headers_sent()) {
+        echo '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url='
+            . e($path) . '"><script>location.href=' . json_encode($path) . ';</script>';
+        exit;
+    }
+    // 收尾：先清空所有输出缓冲（丢弃任何意外缓冲的警告文本，确保 header() 一定能发出），
+    // 再落盘会话（避免 shutdown 阶段写会话时再产生输出导致 HTTP/2 流被截断/协议错误），
+    // 最后显式 302 + 绝对 Location + 极简正文兜底。
+    while (ob_get_level() > 0) { ob_end_clean(); }
+    if (function_exists('session_status') && session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
+    http_response_code(302);
     header('Location: ' . $path);
+    echo '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url='
+        . e($path) . '"><title>正在跳转…</title><a href="' . e($path) . '">继续</a>';
     exit;
 }
 
@@ -411,4 +437,31 @@ function wm_safe_display_path(string $path): string
         return '';
     }
     return $p;
+}
+
+/**
+ * 校验 favicon 相对路径（仅允许 uploads/site 下的 .ico / .png），非法返回 ''
+ */
+function wm_safe_favicon_path(string $path): string
+{
+    $p = ltrim(str_replace('\\', '/', $path), '/');
+    if (!preg_match('#^uploads/site/[A-Za-z0-9_\-]+\.(ico|png)$#', $p)) {
+        return '';
+    }
+    return $p;
+}
+
+/**
+ * 输出网站图标 <link>（未设置则不输出）。
+ * $base 为相对站点的前缀：后台/用户中心传 '../'，前台传 ''。
+ */
+function wm_favicon_link(string $base = ''): void
+{
+    $f = wm_safe_favicon_path((string)wm_setting('favicon', ''));
+    if ($f === '') {
+        return;
+    }
+    $url = $base . $f;
+    echo '<link rel="icon" type="image/x-icon" href="' . e($url) . '">' . "\n";
+    echo '<link rel="apple-touch-icon" href="' . e($url) . '">' . "\n";
 }

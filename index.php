@@ -57,7 +57,8 @@ function wm_avatar_html(string $name, string $avatar, string $cls = 'avatar'): s
 <meta name="theme-color" content="#ededed">
 <title><?= e($siteName) ?><?= $curCat ? ' - ' . e((string)$curCat['name']) : '' ?></title>
 <meta name="description" content="<?= e(wm_cut((string)wm_setting('site_desc', ''), 100)) ?>">
-<link rel="stylesheet" href="assets/css/style.css?v=<?= e(WM_VERSION) ?>">
+<link rel="stylesheet" href="assets/css/style.css?v=<?= e(WM_ASSET_VER) ?>">
+<?php wm_favicon_link(''); ?>
 </head>
 <body>
 <div class="app">
@@ -219,6 +220,6 @@ function wm_avatar_html(string $name, string $avatar, string $cls = 'avatar'): s
 <div class="toast" id="toast" hidden></div>
 
 <script>window.WM = <?= ejs(['base' => $base, 'token' => wm_csrf_token(), 'needAudit' => $needAudit]) ?>;</script>
-<script src="assets/js/app.js?v=<?= e(WM_VERSION) ?>"></script>
+<script src="assets/js/app.js?v=<?= e(WM_ASSET_VER) ?>"></script>
 </body>
 </html>

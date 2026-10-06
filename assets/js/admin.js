@@ -167,13 +167,15 @@
     render();
   }
 
-  /* ---------------- 单图上传（头像 / 封面） ---------------- */
+  /* ---------------- 单图上传（头像 / 封面 / 图标） ---------------- */
   $$('[data-single-upload]').forEach(function (box) {
     var input = box.querySelector('input[type=file]');
     var target = document.getElementById(box.getAttribute('data-target'));
     var preview = box.querySelector('.sp-img');
     var btn = box.querySelector('.sp-btn');
     var clr = box.querySelector('.sp-clear');
+    var utype = box.getAttribute('data-utype') || 'image';
+    var uurl = box.getAttribute('data-uurl') || 'upload.php';
     if (btn && input) { btn.addEventListener('click', function () { input.click(); }); }
     if (clr) {
       clr.addEventListener('click', function () {
@@ -187,7 +189,7 @@
       if (!f) { return; }
       var fd = new FormData();
       fd.append('_token', CFG.token || '');
-      fd.append('type', 'image');
+      fd.append('type', utype);
       fd.append('file', f);
       if (btn) { btn.disabled = true; }
       fetch('upload.php', { method: 'POST', body: fd, credentials: 'same-origin' })

@@ -10,7 +10,13 @@ if (defined('WM_INIT')) {
 }
 define('WM_INIT', true);
 
-define('WM_VERSION', '1.1.0');
+define('WM_VERSION', '1.1.2');
+// 静态资源缓存戳：仅当 JS/CSS 发生改动时手动 +1，与发布版本(WM_VERSION)解耦，
+// 避免「只部署了前端文件却因版本号未变导致浏览器沿用旧缓存」的问题。
+define('WM_ASSET_VER', '20261006');
+// 在线更新的清单地址（开发者托管更新包与 manifest.json 的位置）；
+// 可在后台「在线更新」页通过 update_channel 设置覆盖，便于私有部署。
+define('WM_UPDATE_CHANNEL', 'https://www.770a.cn/pyq/update/manifest.json');
 define('WM_ROOT', dirname(__DIR__));
 define('WM_INC', WM_ROOT . '/includes');
 define('WM_DATA', WM_ROOT . '/data');

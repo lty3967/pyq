@@ -74,7 +74,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <title>后台登录 - <?= e((string)wm_setting('site_name', '朋友圈')) ?></title>
-    <link rel="stylesheet" href="../assets/css/admin.css?v=<?= e(WM_VERSION) ?>">
+    <link rel="stylesheet" href="../assets/css/admin.css?v=<?= e(WM_ASSET_VER) ?>">
     <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
 </head>
 <body class="login-body">
