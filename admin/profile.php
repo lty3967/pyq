@@ -24,7 +24,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         } elseif (mb_strlen($signature) > 100) {
             $err = '个性签名不能超过 100 字';
         }
-        if ($avatar !== '' && !preg_match('#^uploads/(image|thumb)/\d{4}/\d{2}/[A-Za-z0-9_\-]+\.[A-Za-z0-9]{2,5}$#', $avatar)) {
+        if ($avatar !== '' && wm_safe_display_path($avatar) === '') {
             $avatar = (string)$admin['avatar'];
         }
 
@@ -97,6 +97,7 @@ $logs = wm_all('SELECT action, detail, ip, created_at FROM ' . wm_t('log') . '
                 WHERE admin_id = ? ORDER BY id DESC LIMIT 10', [(int)$admin['id']]);
 
 wm_head('管理员信息');
+$adminAvatar = wm_safe_display_path((string)$admin['avatar']);
 ?>
 <div class="grid2">
   <section class="box">
@@ -125,13 +126,13 @@ wm_head('管理员信息');
 
       <div class="fr"><label>头像</label><div class="fc">
         <div data-single-upload="1" data-target="avatarPath" class="frow" style="align-items:center">
-          <img class="sp-img" src="<?= (string)$admin['avatar'] !== '' ? '../' . e((string)$admin['avatar']) : '' ?>"
-               alt="" style="width:64px;height:64px;border-radius:8px;object-fit:cover;border:1px solid #ebebeb;<?= (string)$admin['avatar'] === '' ? 'display:none' : '' ?>">
+          <img class="sp-img" src="<?= $adminAvatar !== '' ? '../' . e($adminAvatar) : '' ?>"
+               alt="" style="width:64px;height:64px;border-radius:8px;object-fit:cover;border:1px solid #ebebeb;<?= $adminAvatar === '' ? 'display:none' : '' ?>">
           <button class="btn sm ghost sp-btn" type="button">选择图片</button>
           <button class="btn sm ghost sp-clear" type="button">清除</button>
           <input type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden>
         </div>
-        <input type="hidden" name="avatar" id="avatarPath" value="<?= e((string)$admin['avatar']) ?>">
+        <input type="hidden" name="avatar" id="avatarPath" value="<?= e($adminAvatar) ?>">
         <div class="fh">未设置头像时前台显示昵称首字色块</div>
       </div></div>
 

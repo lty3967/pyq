@@ -21,7 +21,7 @@ if ($postId <= 0) {
 
 // IP 黑名单
 if ($act !== 'view') {
-    $blocked = array_filter(array_map('trim', preg_split('/[\r\n]+/', (string)wm_setting('block_ips', '')) ?: []));
+    $blocked = wm_blocked_ips();
     if ($blocked && in_array(wm_client_ip(), $blocked, true)) {
         wm_json(false, '当前网络环境已被限制互动', [], 403);
     }
@@ -44,19 +44,26 @@ switch ($act) {
             wm_json(false, '操作过于频繁，请稍后再试', [], 429);
         }
         $ipHash = wm_ip_hash();
+        // 登录用户认账号，同时可接管自己在同一 IP 上的历史匿名记录；
+        // 绝不能匹配 user_id <> 0 的他人记录，否则会误删同一出口 IP 下别人的赞。
         $exists = $currentUserId > 0
-            ? wm_one('SELECT id FROM ' . wm_t('like') . ' WHERE post_id = ? AND user_id = ? LIMIT 1', [$postId, $currentUserId])
-            : wm_one('SELECT id FROM ' . wm_t('like') . ' WHERE post_id = ? AND ip_hash = ? LIMIT 1', [$postId, $ipHash]);
+            ? wm_one('SELECT id FROM ' . wm_t('like') . '
+                      WHERE post_id = ? AND (user_id = ? OR (ip_hash = ? AND user_id = 0))
+                      ORDER BY id LIMIT 1', [$postId, $currentUserId, $ipHash])
+            : wm_one('SELECT id FROM ' . wm_t('like') . '
+                      WHERE post_id = ? AND ip_hash = ? AND user_id = 0 LIMIT 1', [$postId, $ipHash]);
         if ($exists !== null) {
             wm_exec('DELETE FROM ' . wm_t('like') . ' WHERE id = ?', [(int)$exists['id']]);
             $liked = false;
         } else {
             try {
                 wm_exec('INSERT INTO ' . wm_t('like') . ' (post_id, user_id, ip_hash, created_at) VALUES (?, ?, ?, NOW())', [$postId, $currentUserId, $ipHash]);
+                $liked = true;
             } catch (Throwable $e) {
-                // 唯一键冲突视为已点赞
+                // 唯一键冲突：匿名访客在同一出口 IP（NAT/公司网络）下已有记录，
+                // 或该账号已点过赞。此处禁止删除他人记录，仅如实告知。
+                wm_json(false, $currentUserId > 0 ? '你已经赞过这条内容了' : '当前网络已有其他访客点过赞', [], 409);
             }
-            $liked = true;
         }
         $count = (int)wm_value('SELECT COUNT(*) FROM ' . wm_t('like') . ' WHERE post_id = ?', [$postId]);
         wm_exec('UPDATE ' . wm_t('post') . ' SET likes = ? WHERE id = ?', [$count, $postId]);
@@ -72,22 +79,17 @@ switch ($act) {
             wm_json(false, '该内容已关闭评论');
         }
 
-        $interval = max(0, (int)wm_setting('comment_interval', '30'));
-        $maxHour = max(1, (int)wm_setting('comment_max_per_hour', '10'));
-        if ($interval > 0 && !wm_rate_limit('cmt_i', 1, $interval)) {
-            wm_json(false, '发言过快，请' . $interval . '秒后再试', [], 429);
-        }
-        if (!wm_rate_limit('cmt_h', $maxHour, 3600)) {
-            wm_json(false, '评论次数已达上限，请稍后再试', [], 429);
-        }
-
         $nickname = wm_input('nickname');
         $email = wm_input('email');
         if ($currentUserId > 0) {
-            $identity = wm_one('SELECT nickname,email FROM ' . wm_t('user') . ' WHERE id=? AND status=1 LIMIT 1', [$currentUserId]);
+            $identity = wm_one('SELECT nickname,email,username FROM ' . wm_t('user') . ' WHERE id=? AND status=1 LIMIT 1', [$currentUserId]);
             if ($identity === null) { wm_json(false, '用户账号不可用', [], 403); }
             $nickname = (string)$identity['nickname'];
             $email = (string)$identity['email'];
+            // 历史昵称可能含尖括号或链接。此处剥离而非直接拒绝，
+            // 否则这类账号会永远卡在「昵称包含非法字符」而无法评论。
+            $clean = trim(str_replace(['<', '>'], '', preg_replace('#https?://#i', '', $nickname) ?? $nickname));
+            $nickname = $clean !== '' ? $clean : (string)$identity['username'];
         }
         $content = wm_input('content');
         $parentId = wm_input_int('parent_id');
@@ -126,6 +128,18 @@ switch ($act) {
                 $content = wm_badword_mask($content);
                 $nickname = wm_badword_mask($nickname);
             }
+        }
+
+        // 频率限制放在全部字段校验之后，避免非法请求白白消耗额度。
+        // 登录用户按账号、匿名访客按 IP，与「个人中心回复」保持同一套桶。
+        $rateSubject = $currentUserId > 0 ? 'user' . $currentUserId : '';
+        $interval = max(0, (int)wm_setting('comment_interval', '30'));
+        $maxHour = max(1, (int)wm_setting('comment_max_per_hour', '10'));
+        if ($interval > 0 && !wm_rate_limit('cmt_i', 1, $interval, $rateSubject)) {
+            wm_json(false, '发言过快，请' . $interval . '秒后再试', [], 429);
+        }
+        if (!wm_rate_limit('cmt_h', $maxHour, 3600, $rateSubject)) {
+            wm_json(false, '评论次数已达上限，请稍后再试', [], 429);
         }
 
         $needAudit = (string)wm_setting('comment_need_audit', '1') === '1';
@@ -168,6 +182,10 @@ switch ($act) {
 
     // ---------------- 浏览上报 ----------------
     case 'view':
+        // 浏览上报虽按 IP+日去重，但仍会写库；无节流可被脚本灌爆 view 表
+        if (!wm_rate_limit('view', 120, 300)) {
+            wm_json(false, '请求过于频繁', [], 429);
+        }
         wm_post_view($postId);
         wm_json(true, 'ok');
         break;

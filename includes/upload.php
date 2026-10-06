@@ -5,7 +5,6 @@
 declare(strict_types=1);
 if (!defined('WM_INIT')) { exit('403'); }
 
-const WM_IMAGE_EXT = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
 const WM_VIDEO_EXT = ['mp4', 'webm'];
 
 function wm_upload_limit_image(): int
@@ -16,6 +15,28 @@ function wm_upload_limit_image(): int
 function wm_upload_limit_video(): int
 {
     return max(1, (int)wm_setting('max_video_mb', '40')) * 1024 * 1024;
+}
+
+/**
+ * 允许解压的最大像素数。
+ * GD 以 truecolor 处理，内存占用约为「宽×高×4 字节」；
+ * 原先固定 8000 万像素 ≈ 320MB，远超常见 memory_limit，
+ * 一张高压缩比的小体积 JPEG 就能把 PHP 进程打爆（解压炸弹）。
+ * 这里按 memory_limit 的一部分反推，并夹在合理区间内。
+ */
+function wm_image_max_pixels(): int
+{
+    $limit = trim((string)ini_get('memory_limit'));
+    $bytes = 0;
+    if ($limit !== '' && $limit !== '-1') {
+        $unit = strtolower(substr($limit, -1));
+        $num = (float)$limit;
+        $mul = $unit === 'g' ? 1073741824 : ($unit === 'm' ? 1048576 : ($unit === 'k' ? 1024 : 1));
+        $bytes = (int)($num * $mul);
+    }
+    // 无限制时取上限；否则只拿出 memory_limit 的一半给解压
+    $byMem = $bytes > 0 ? (int)floor($bytes * 0.5 / 4) : 40000000;
+    return max(5000000, min(40000000, $byMem));
 }
 
 /** 上传错误码转文案 */
@@ -83,8 +104,10 @@ function wm_upload_image(array $file): array
         return ['ok' => false, 'msg' => '仅支持 JPG/PNG/GIF/WEBP 图片'];
     }
     $ext = $map[$mime];
-    if ($w * $h > 80000000) {
-        return ['ok' => false, 'msg' => '图片像素过大'];
+    // 像素上限按 memory_limit 反推，避免解压阶段内存耗尽
+    $maxPixels = wm_image_max_pixels();
+    if ($w * $h > $maxPixels) {
+        return ['ok' => false, 'msg' => '图片像素过大（上限约 ' . round($maxPixels / 1000000, 1) . ' 百万像素）'];
     }
 
     [$rel, $abs] = wm_upload_dir('image');
@@ -311,6 +334,34 @@ function wm_video_header_ok(string $path, string $ext): bool
         return substr($head, 0, 4) === "\x1A\x45\xDF\xA3";
     }
     return false;
+}
+
+/**
+ * 通用上传接收（用户端 upload.php 与后台 upload.php 共用）
+ * 只负责「类型校验 + 落盘 + 统一返回结构」，鉴权与是否入库 media 由调用方决定
+ * @return array{ok:bool,msg:string,data?:array}
+ */
+function wm_upload_receive(string $type, array $file): array
+{
+    if (!in_array($type, ['image', 'video'], true)) {
+        return ['ok' => false, 'msg' => '上传类型无效'];
+    }
+    $res = $type === 'image' ? wm_upload_image($file) : wm_upload_video($file);
+    if (!$res['ok']) {
+        return ['ok' => false, 'msg' => (string)$res['msg']];
+    }
+    return [
+        'ok'  => true,
+        'msg' => '上传成功',
+        'data' => [
+            'type'   => $type,
+            'path'   => (string)$res['path'],
+            'thumb'  => (string)($res['thumb'] ?? ''),
+            'width'  => (int)($res['width'] ?? 0),
+            'height' => (int)($res['height'] ?? 0),
+            'size'   => (int)$res['size'],
+        ],
+    ];
 }
 
 /** 删除媒体文件（限定在 uploads 目录内） */

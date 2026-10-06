@@ -1,7 +1,18 @@
 <?php
+/**
+ * 前台用户注册
+ *
+ * 受后台「开放前台用户注册」开关控制；密码强度由 wm_password_weak() 统一校验，
+ * 昵称额外禁止尖括号与网址（否则该账号在前台评论时会被 api.php 的字符校验挡住）。
+ */
 declare(strict_types=1);
 
 require dirname(__DIR__) . '/includes/init.php';
+
+if ((string) wm_setting('allow_register', '1') !== '1') {
+    http_response_code(403);
+    exit('<!doctype html><meta charset="utf-8"><div style="font:15px/1.8 sans-serif;padding:60px;text-align:center">本站已关闭注册。<br><a href="login.php">返回登录</a></div>');
+}
 
 if (wm_user() !== null) {
     wm_redirect('index.php');
@@ -25,8 +36,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     if (!preg_match('/^[A-Za-z0-9_]{3,30}$/', $form['username'])) {
         $error = '账号需为 3-30 位字母、数字或下划线';
-    } elseif ($form['nickname'] === '' || mb_strlen($form['nickname']) > 20) {
-        $error = '昵称需为 1-20 字';
+    } elseif (($nickErr = wm_nickname_error($form['nickname'])) !== '') {
+        $error = $nickErr;
     } elseif ($form['email'] !== '' && !filter_var($form['email'], FILTER_VALIDATE_EMAIL)) {
         $error = '邮箱格式不正确';
     } elseif ($password !== $password2) {

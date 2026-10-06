@@ -10,9 +10,10 @@ $s = wm_stats();
 $srv = wm_server_info();
 $trend = wm_trend(14);
 
-// 目录实际占用
-$imgDirBytes = wm_dir_size(WM_UPLOAD . '/image') + wm_dir_size(WM_UPLOAD . '/thumb');
-$vidDirBytes = wm_dir_size(WM_UPLOAD . '/video');
+// 目录实际占用（带缓存，避免每次进后台首页都全量递归扫描 uploads）
+$usage = wm_upload_usage();
+$imgDirBytes = $usage['image'];
+$vidDirBytes = $usage['video'];
 
 $recentPosts = wm_all('SELECT id, content, views, likes, comments, status, created_at
                        FROM ' . wm_t('post') . ' ORDER BY id DESC LIMIT 6');
@@ -148,8 +149,7 @@ wm_head('控制台');
         <tr><td colspan="3" class="none">暂无数据</td></tr>
       <?php endif; ?>
       <?php foreach ($recentCmts as $c):
-        $stMap = [0 => ['待审', 'wait'], 1 => ['通过', 'on'], 2 => ['屏蔽', 'off']];
-        [$stTxt, $stCls] = $stMap[(int)$c['status']] ?? ['未知', 'off']; ?>
+        [$stTxt, $stCls] = wm_comment_status((int)$c['status']); ?>
         <tr>
           <td><?= e(wm_cut((string)$c['nickname'], 8)) ?></td>
           <td><?= e(wm_cut((string)$c['content'], 16)) ?></td>

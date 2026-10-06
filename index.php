@@ -39,7 +39,8 @@ $base = wm_base_url();
 /** 头像占位 */
 function wm_avatar_html(string $name, string $avatar, string $cls = 'avatar'): string
 {
-    if ($avatar !== '' && preg_match('#^uploads/[A-Za-z0-9_\-/\.]+$#', $avatar)) {
+    // 统一走路径白名单（旧正则允许 ..，存在被指向其他目录的可能）
+    if ($avatar !== '' && wm_safe_display_path($avatar) !== '') {
         return '<img class="' . e($cls) . '" src="' . e($avatar) . '" alt="" loading="lazy">';
     }
     $ch = mb_substr($name !== '' ? $name : '友', 0, 1);
@@ -63,7 +64,7 @@ function wm_avatar_html(string $name, string $avatar, string $cls = 'avatar'): s
 
   <!-- 顶部封面 -->
   <header class="cover">
-    <?php if ($cover !== '' && preg_match('#^uploads/[A-Za-z0-9_\-/\.]+$#', $cover)): ?>
+    <?php if ($cover !== '' && wm_safe_display_path($cover) !== ''): ?>
       <img class="cover-img" src="<?= e($cover) ?>" alt="">
     <?php else: ?>
       <div class="cover-img cover-default"></div>

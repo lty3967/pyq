@@ -1,4 +1,10 @@
 <?php
+/**
+ * 后台 - 编辑前台用户资料
+ *
+ * 登录账号不可修改；「重置密码」留空表示不改，填写后会 pass_version + 1，
+ * 使该用户现有登录会话立即失效（wm_user() 每请求比对 pass_version）。
+ */
 declare(strict_types=1);
 
 require __DIR__ . '/inc/layout.php';
@@ -24,8 +30,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $status = wm_input_int('status') === 1 ? 1 : 0;
     $newPassword = (string) ($_POST['new_password'] ?? '');
 
-    if ($nickname === '' || mb_strlen($nickname) > 20) {
-        $error = '昵称需为 1-20 字';
+    if (($nickErr = wm_nickname_error($nickname)) !== '') {
+        $error = $nickErr;
     } elseif ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $error = '邮箱格式不正确';
     } elseif (mb_strlen($signature) > 100) {
@@ -49,7 +55,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             );
         }
 
-        wm_log('编辑用户', '用户 ID：' . $userId);
+        // 重置密码属于高危操作，日志里要能区分出来，否则审计时与改昵称无法分辨
+        wm_log('编辑用户', '用户 ID：' . $userId . ($newPassword !== '' ? '（含密码重置）' : ''));
         wm_flash(true, '用户资料已保存');
         wm_redirect('users.php');
     }

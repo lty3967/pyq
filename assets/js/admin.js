@@ -189,16 +189,16 @@
       fd.append('_token', CFG.token || '');
       fd.append('type', 'image');
       fd.append('file', f);
-      btn.disabled = true;
+      if (btn) { btn.disabled = true; }
       fetch('upload.php', { method: 'POST', body: fd, credentials: 'same-origin' })
         .then(function (r) { return r.json(); })
         .then(function (res) {
-          btn.disabled = false;
+          if (btn) { btn.disabled = false; }
           input.value = '';
           if (!res.ok) { alert(res.msg || '上传失败'); return; }
           target.value = res.data.path;
           if (preview) { preview.src = mediaUrl(res.data.thumb || res.data.path); preview.style.display = ''; }
-        }).catch(function () { btn.disabled = false; alert('上传请求失败'); });
+        }).catch(function () { if (btn) { btn.disabled = false; } alert('上传请求失败'); });
     });
   });
 

@@ -1,4 +1,12 @@
 <?php
+/**
+ * 后台 - 前台用户管理
+ *
+ * 支持启用/禁用与删除。删除为级联清理：
+ *   用户动态 → 动态下的媒体、评论、点赞、浏览记录 → 用户自己的评论/点赞/
+ *   未关联媒体（post_id = 0）→ 用户头像文件 → 用户记录。
+ * 媒体文件在事务提交成功后才 unlink，避免回滚导致「记录还在、文件已丢」。
+ */
 declare(strict_types=1);
 
 require __DIR__ . '/inc/layout.php';
@@ -11,7 +19,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $action = wm_input('act');
     $userId = wm_input_int('id');
     $target = wm_one(
-        'SELECT id, username, status FROM ' . wm_t('user') . ' WHERE id = ? LIMIT 1',
+        'SELECT id, username, status, avatar FROM ' . wm_t('user') . ' WHERE id = ? LIMIT 1',
         [$userId]
     );
 
@@ -60,6 +68,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 wm_exec('DELETE FROM ' . wm_t('post') . ' WHERE id = ?', [$postId]);
             }
 
+            // 未关联到动态的上传（post_id = 0）也要收集，
+            // 否则下面删了数据库记录却把物理文件永远留在 uploads 里
+            $mediaToDelete = array_merge(
+                $mediaToDelete,
+                wm_all(
+                    'SELECT path, thumb FROM ' . wm_t('media') . ' WHERE user_id = ? AND post_id = 0',
+                    [$userId]
+                )
+            );
+
             wm_exec('DELETE FROM ' . wm_t('comment') . ' WHERE user_id = ?', [$userId]);
             wm_exec('DELETE FROM ' . wm_t('like') . ' WHERE user_id = ?', [$userId]);
             wm_exec('DELETE FROM ' . wm_t('media') . ' WHERE user_id = ?', [$userId]);
@@ -72,6 +90,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 if ((string) $media['thumb'] !== '') {
                     wm_media_unlink((string) $media['thumb']);
                 }
+            }
+
+            // 用户头像不在 media 表中，需单独清理，否则会残留孤儿文件
+            if ((string) $target['avatar'] !== '') {
+                wm_media_unlink((string) $target['avatar']);
             }
 
             wm_log('删除用户', '用户 ID：' . $userId);
@@ -98,10 +121,11 @@ $where = '';
 $params = [];
 
 if ($keyword !== '') {
-    $where = ' WHERE u.username LIKE :keyword
+    // 必须整体加括号：AND 优先级高于 OR，后续一旦追加其它条件就会静默产生错误结果
+    $where = ' WHERE (u.username LIKE :keyword
                OR u.nickname LIKE :keyword
-               OR u.email LIKE :keyword';
-    $params[':keyword'] = '%' . $keyword . '%';
+               OR u.email LIKE :keyword)';
+    $params[':keyword'] = '%' . wm_like_escape($keyword) . '%';
 }
 
 $total = (int) wm_value(
@@ -109,7 +133,9 @@ $total = (int) wm_value(
     $params
 );
 
-$offset = ($page - 1) * $pageSize;
+$pg = wm_paging($total, $page, $pageSize);
+$page = $pg['page'];
+$offset = $pg['offset'];
 $users = wm_all(
     'SELECT u.*,
             COALESCE((SELECT COUNT(*) FROM ' . wm_t('post') . ' p WHERE p.user_id = u.id), 0) AS posts,

@@ -29,14 +29,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 wm_log('评论审核', $bAct . '：' . count($ids) . ' 条');
                 wm_flash(true, '已处理 ' . count($ids) . ' 条评论');
             } elseif ($bAct === 'delete') {
-                // 同时清理其子回复
-                wm_exec('DELETE FROM ' . wm_t('comment') . ' WHERE parent_id IN (' . $in . ')', $ids);
-                $n = wm_exec('DELETE FROM ' . wm_t('comment') . ' WHERE id IN (' . $in . ')', $ids);
+                // 连同所有层级的子回复一起删除，避免多级回复残留成孤儿
+                $delIds = wm_comment_descendants($ids);
+                $inDel = implode(',', array_fill(0, count($delIds), '?'));
+                // 计数必须在删除前取，子回复可能挂在别的动态上
+                $delPosts = array_map('intval', array_column(
+                    wm_all('SELECT DISTINCT post_id FROM ' . wm_t('comment') . ' WHERE id IN (' . $inDel . ')', $delIds), 'post_id'));
+                $posts = array_values(array_unique(array_merge($posts, $delPosts)));
+                $n = wm_exec('DELETE FROM ' . wm_t('comment') . ' WHERE id IN (' . $inDel . ')', $delIds);
                 wm_log('删除评论', 'ID：' . implode(',', $ids));
-                wm_flash(true, '已删除 ' . $n . ' 条评论');
+                wm_flash(true, '已删除 ' . $n . ' 条评论（含 ' . (count($delIds) - count($ids)) . ' 条回复）');
             } elseif ($bAct === 'block_ip') {
                 $ips = array_column(wm_all('SELECT DISTINCT ip FROM ' . wm_t('comment') . ' WHERE id IN (' . $in . ')', $ids), 'ip');
-                $cur = array_filter(array_map('trim', preg_split('/[\r\n]+/', (string)wm_setting('block_ips', '')) ?: []));
+                $cur = wm_blocked_ips();
                 foreach ($ips as $ip) {
                     if ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP) && !in_array($ip, $cur, true)) { $cur[] = $ip; }
                 }
@@ -49,7 +54,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             }
             foreach ($posts as $pid) { wm_post_resync($pid); }
         }
-        wm_redirect('comments.php');
+        // 保留当前筛选条件回跳
+        $qs = (string)($_SERVER['QUERY_STRING'] ?? '');
+        wm_redirect('comments.php' . (($qs !== '' && !preg_match('/[\x00-\x1F\x7F]/', $qs)) ? '?' . $qs : ''));
     }
 
     if ($act === 'moderate') {
@@ -115,14 +122,16 @@ if ($statusF !== '') { $where[] = 'c.status = :st'; $params[':st'] = (int)$statu
 if ($postF > 0) { $where[] = 'c.post_id = :pid'; $params[':pid'] = $postF; }
 if ($kw !== '') {
     $where[] = '(c.content LIKE :kw OR c.nickname LIKE :kw OR c.ip = :ipx)';
-    $params[':kw'] = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $kw) . '%';
+    $params[':kw'] = '%' . wm_like_escape($kw) . '%';
     $params[':ipx'] = $kw;
 }
 if ($badOnly) { $where[] = "c.bad_hit <> ''"; }
 $sqlW = $where ? ' WHERE ' . implode(' AND ', $where) : '';
 
 $total = (int)wm_value('SELECT COUNT(*) FROM ' . wm_t('comment') . ' c' . $sqlW, $params);
-$offset = ($page - 1) * $size;
+$pg = wm_paging($total, $page, $size);
+$page = $pg['page'];
+$offset = $pg['offset'];
 $rows = wm_all('SELECT c.*, p.content AS post_content FROM ' . wm_t('comment') . ' c
                 LEFT JOIN ' . wm_t('post') . ' p ON p.id = c.post_id
                 ' . $sqlW . ' ORDER BY c.id DESC LIMIT ' . $size . ' OFFSET ' . $offset, $params);
@@ -180,8 +189,7 @@ wm_head('评论管理');
       <tbody>
         <?php if (!$rows): ?><tr><td colspan="8" class="none">暂无评论</td></tr><?php endif; ?>
       <?php foreach ($rows as $c):
-        $stMap = [0 => ['待审', 'wait'], 1 => ['通过', 'on'], 2 => ['屏蔽', 'off']];
-        [$stTxt, $stCls] = $stMap[(int)$c['status']] ?? ['未知', 'off']; ?>
+        [$stTxt, $stCls] = wm_comment_status((int)$c['status']); ?>
         <tr>
           <td><input type="checkbox" name="ids[]" value="<?= (int)$c['id'] ?>" form="batchForm"></td>
           <td>

@@ -18,13 +18,15 @@ class WmMailer
     /** @var resource|null */
     private $sock = null;
     private array $trace = [];
+    /** 认证阶段标志：该阶段的命令一律不写入 trace，避免凭据泄露 */
+    private bool $authPhase = false;
 
     public function __construct(array $cfg = [])
     {
         $this->host     = (string)($cfg['host'] ?? wm_setting('smtp_host', ''));
         $this->port     = (int)($cfg['port'] ?? wm_setting('smtp_port', '465'));
         $this->user     = (string)($cfg['user'] ?? wm_setting('smtp_user', ''));
-        $this->pass     = (string)($cfg['pass'] ?? wm_setting('smtp_pass', ''));
+        $this->pass     = wm_secret_decode((string)($cfg['pass'] ?? wm_setting('smtp_pass', '')));
         $this->secure   = (string)($cfg['secure'] ?? wm_setting('smtp_secure', 'ssl'));
         $this->fromMail = (string)($cfg['from'] ?? wm_setting('smtp_from', $this->user));
         $this->fromName = (string)($cfg['from_name'] ?? wm_setting('smtp_from_name', wm_setting('site_name', '朋友圈')));
@@ -132,12 +134,15 @@ class WmMailer
 
     private function auth(): void
     {
+        $this->authPhase = true;
         try {
             $this->cmd('AUTH LOGIN', [334]);
             $this->cmd(base64_encode($this->user), [334]);
             $this->cmd(base64_encode($this->pass), [235]);
         } catch (Throwable $e) {
             $this->cmd('AUTH PLAIN ' . base64_encode("\0" . $this->user . "\0" . $this->pass), [235]);
+        } finally {
+            $this->authPhase = false;
         }
     }
 
@@ -175,7 +180,8 @@ class WmMailer
     private function cmd(string $cmd, array $expect, bool $ignoreFail = false): string
     {
         $this->write($cmd . "\r\n");
-        $safe = preg_match('/^(AUTH|[A-Za-z0-9+\/=]{16,})/', $cmd) ? '[hidden]' : $cmd;
+        // 认证阶段或形如 base64 的命令一律脱敏，短账号/短密码同样要隐藏
+        $safe = ($this->authPhase || preg_match('/^(AUTH|[A-Za-z0-9+\/=]{6,})/', $cmd)) ? '[hidden]' : $cmd;
         $this->trace[] = '> ' . $safe;
         try {
             return $this->expect($expect);

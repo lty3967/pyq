@@ -4,13 +4,13 @@
  */
 declare(strict_types=1);
 if (!defined('WM_INIT')) { exit('403'); }
+require_once WM_INC . '/upload.php';
 
 /** 已发布动态列表 */
 function wm_post_list(int $page, int $size, int $catId = 0, bool $adminView = false, array $opt = []): array
 {
     $page = max(1, $page);
     $size = min(50, max(1, $size));
-    $offset = ($page - 1) * $size;
 
     $where = [];
     $params = [];
@@ -26,7 +26,7 @@ function wm_post_list(int $page, int $size, int $catId = 0, bool $adminView = fa
     }
     if (!empty($opt['keyword'])) {
         $where[] = 'p.content LIKE :kw';
-        $params[':kw'] = '%' . str_replace(['%', '_'], ['\\%', '\\_'], (string)$opt['keyword']) . '%';
+        $params[':kw'] = '%' . wm_like_escape((string)$opt['keyword']) . '%';
     }
     $sql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
 
@@ -37,6 +37,11 @@ function wm_post_list(int $page, int $size, int $catId = 0, bool $adminView = fa
         $sql = ' WHERE ' . implode(' AND ', $where);
     }
     $total = (int)wm_value('SELECT COUNT(*) FROM ' . wm_t('post') . ' p' . $sql, $params);
+
+    // 页码收敛 + 偏移量计算（防止超大 OFFSET）
+    $pg = wm_paging($total, $page, $size);
+    $page = $pg['page'];
+    $offset = $pg['offset'];
 
     $rows = wm_all(
         'SELECT p.*, c.name AS cat_name, c.color AS cat_color,
@@ -69,7 +74,7 @@ function wm_post_list(int $page, int $size, int $catId = 0, bool $adminView = fa
     }
     unset($r);
 
-    return ['total' => $total, 'rows' => $rows, 'pages' => (int)ceil($total / $size), 'page' => $page];
+    return ['total' => $total, 'rows' => $rows, 'pages' => $pg['pages'], 'page' => $page];
 }
 
 /** 批量取媒体 */
@@ -116,16 +121,47 @@ function wm_comments_by_posts(array $ids, int $limitPer = 50): array
     return $byPost;
 }
 
-/** 当前访客已点赞的动态 ID */
+/** 当前访客已点赞的动态 ID（判定口径需与 api.php 保持一致） */
 function wm_my_likes(array $ids): array
 {
     if (!$ids) { return []; }
     $ids = array_values(array_unique(array_map('intval', $ids)));
     $in = implode(',', array_fill(0, count($ids), '?'));
     $params = $ids;
-    $params[] = wm_ip_hash();
-    $rows = wm_all('SELECT post_id FROM ' . wm_t('like') . ' WHERE post_id IN (' . $in . ') AND ip_hash = ?', $params);
+    $uid = wm_user_id();
+    if ($uid > 0) {
+        // 与 api.php 完全同口径：认账号，并可接管本 IP 上自己的历史匿名记录，
+        // 但不匹配 user_id <> 0 的他人记录（同出口 IP 场景）
+        array_push($params, $uid, wm_ip_hash());
+        $sql = 'SELECT post_id FROM ' . wm_t('like') . '
+                WHERE post_id IN (' . $in . ') AND (user_id = ? OR (ip_hash = ? AND user_id = 0))';
+    } else {
+        // 匿名访客只认本 IP 的匿名记录：不能命中 user_id <> 0 的他人记录，
+        // 否则同一出口 IP 下会把别人的赞显示成自己的，进而被误删
+        array_push($params, wm_ip_hash());
+        $sql = 'SELECT post_id FROM ' . wm_t('like') . '
+                WHERE post_id IN (' . $in . ') AND ip_hash = ? AND user_id = 0';
+    }
+    $rows = wm_all($sql, $params);
     return array_map(static fn($r) => (int)$r['post_id'], $rows);
+}
+
+/**
+ * 媒体混排规则（用户端与后台共用）
+ * - 视频与图片不可混合
+ * - 视频仅保留 1 个
+ * - 图片最多 $max 张
+ * 输入元素需包含 type / path 键，返回规范化后的列表
+ */
+function wm_media_pick(array $media, int $max = 9): array
+{
+    $media = array_slice(array_values($media), 0, max(1, $max));
+    foreach ($media as $m) {
+        if (($m['type'] ?? '') === 'video') {
+            return [$m];
+        }
+    }
+    return $media;
 }
 
 /** 单条动态 */
@@ -182,27 +218,172 @@ function wm_post_resync(int $postId): void
              WHERE p.id = ?', [$postId]);
 }
 
+/**
+ * 清理孤立媒体：用户上传后始终未关联到任何动态（post_id = 0）且已超过指定小时的记录。
+ * 这类记录留在 media 表里，后台「清理孤立文件」会因它们「有记录」而永远跳过，
+ * 导致上传目录持续增长。
+ * @param int $hours 超过多少小时未使用才清理
+ * @param int $userId 限定某个用户，0 表示全部
+ * @return int 清理的文件数
+ */
+function wm_media_purge_orphans(int $hours = 24, int $userId = 0, int $limit = 500): int
+{
+    try {
+        $hours = max(1, $hours);
+        $limit = max(1, min(2000, $limit));
+        $sql = 'SELECT id, path, thumb FROM ' . wm_t('media') . '
+                WHERE post_id = 0 AND created_at < DATE_SUB(NOW(), INTERVAL ? HOUR)';
+        $params = [$hours];
+        if ($userId > 0) {
+            $sql .= ' AND user_id = ?';
+            $params[] = $userId;
+        }
+        $sql .= ' ORDER BY id ASC LIMIT ' . $limit;
+
+        $rows = wm_all($sql, $params);
+        if (!$rows) { return 0; }
+
+        $ids = array_map('intval', array_column($rows, 'id'));
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        wm_exec('DELETE FROM ' . wm_t('media') . ' WHERE id IN (' . $in . ') AND post_id = 0', $ids);
+
+        foreach ($rows as $r) {
+            wm_media_unlink((string)$r['path']);
+            if ((string)$r['thumb'] !== '') { wm_media_unlink((string)$r['thumb']); }
+        }
+        return count($rows);
+    } catch (Throwable $e) {
+        error_log('purge orphans fail: ' . $e->getMessage());
+        return 0;
+    }
+}
+
+/** 作废上传占用缓存，使下次访问后台时重新统计（删除动态、清理孤立文件后调用） */
+function wm_upload_usage_reset(): void
+{
+    try {
+        wm_setting_set('upload_usage_at', '0');
+    } catch (Throwable $e) {
+        error_log('upload usage reset fail: ' . $e->getMessage());
+    }
+}
+
+/**
+ * 上传目录实际占用（带缓存）。
+ * wm_dir_size() 会递归 stat 整个目录，媒体量大时每次进后台首页都要全量扫一遍磁盘，
+ * 这里把结果缓存一段时间，避免后台首页被磁盘 IO 拖慢。
+ * @return array{image:int,video:int}
+ */
+function wm_upload_usage(int $ttl = 600): array
+{
+    $at = (int)wm_setting('upload_usage_at', '0');
+    if ($at > 0 && time() - $at < $ttl) {
+        $cached = json_decode((string)wm_setting('upload_usage_cache', ''), true);
+        if (is_array($cached) && isset($cached['image'], $cached['video'])) {
+            return ['image' => (int)$cached['image'], 'video' => (int)$cached['video']];
+        }
+    }
+
+    $data = [
+        'image' => wm_dir_size(WM_UPLOAD . '/image') + wm_dir_size(WM_UPLOAD . '/thumb'),
+        'video' => wm_dir_size(WM_UPLOAD . '/video'),
+    ];
+    try {
+        wm_setting_set('upload_usage_cache', (string)json_encode($data));
+        wm_setting_set('upload_usage_at', (string)time());
+    } catch (Throwable $e) {
+        error_log('upload usage cache fail: ' . $e->getMessage());
+    }
+    return $data;
+}
+
+/**
+ * 评论状态的统一展示映射（后台、用户中心共用一个来源，避免多处各写一份）。
+ * @return array{0:string,1:string} [文案, CSS 类名]
+ */
+function wm_comment_status(int $status): array
+{
+    $map = [
+        0 => ['待审', 'wait'],
+        1 => ['通过', 'on'],
+        2 => ['屏蔽', 'off'],
+    ];
+    return $map[$status] ?? ['未知', 'off'];
+}
+
+/**
+ * 收集评论及其所有子孙评论的 ID。
+ * 删除评论时若只清理一层子回复，三级及更深的回复会残留成孤儿数据。
+ */
+function wm_comment_descendants(array $ids): array
+{
+    $ids = array_values(array_unique(array_map('intval', array_filter($ids, static fn($v) => (int)$v > 0))));
+    if (!$ids) { return []; }
+
+    $all = $ids;
+    $found = $ids;
+    $depth = 0;
+    while ($found && $depth < 20) {
+        $in = implode(',', array_fill(0, count($found), '?'));
+        $rows = wm_all('SELECT id FROM ' . wm_t('comment') . ' WHERE parent_id IN (' . $in . ')', $found);
+        $found = [];
+        foreach ($rows as $r) {
+            $id = (int)$r['id'];
+            if (!in_array($id, $all, true)) {
+                $all[] = $id;
+                $found[] = $id;
+            }
+        }
+        $depth++;
+    }
+    return $all;
+}
+
 /** 统计概览 */
 function wm_stats(): array
 {
     $t = static fn(string $n) => wm_t($n);
     $s = [];
-    $s['posts']          = (int)wm_value('SELECT COUNT(*) FROM ' . $t('post'));
-    $s['posts_online']   = (int)wm_value('SELECT COUNT(*) FROM ' . $t('post') . ' WHERE status = 1');
-    $s['posts_today']    = (int)wm_value('SELECT COUNT(*) FROM ' . $t('post') . ' WHERE DATE(created_at) = CURDATE()');
-    $s['likes']          = (int)wm_value('SELECT COUNT(*) FROM ' . $t('like'));
-    $s['likes_today']    = (int)wm_value('SELECT COUNT(*) FROM ' . $t('like') . ' WHERE DATE(created_at) = CURDATE()');
-    $s['comments']       = (int)wm_value('SELECT COUNT(*) FROM ' . $t('comment'));
-    $s['comments_ok']    = (int)wm_value('SELECT COUNT(*) FROM ' . $t('comment') . ' WHERE status = 1');
-    $s['comments_wait']  = (int)wm_value('SELECT COUNT(*) FROM ' . $t('comment') . ' WHERE status = 0');
-    $s['comments_block'] = (int)wm_value('SELECT COUNT(*) FROM ' . $t('comment') . ' WHERE status = 2');
-    $s['views']          = (int)wm_value('SELECT COALESCE(SUM(views),0) FROM ' . $t('post'));
-    $s['categories']     = (int)wm_value('SELECT COUNT(*) FROM ' . $t('category'));
-    $s['images']         = (int)wm_value('SELECT COUNT(*) FROM ' . $t('media') . " WHERE type = 'image'");
-    $s['videos']         = (int)wm_value('SELECT COUNT(*) FROM ' . $t('media') . " WHERE type = 'video'");
-    $s['image_bytes']    = (int)wm_value('SELECT COALESCE(SUM(size),0) FROM ' . $t('media') . " WHERE type = 'image'");
-    $s['video_bytes']    = (int)wm_value('SELECT COALESCE(SUM(size),0) FROM ' . $t('media') . " WHERE type = 'video'");
-    $s['media_bytes']    = $s['image_bytes'] + $s['video_bytes'];
+    // 用条件聚合同表多指标，把原来的 15 条独立 COUNT 压到 5 条。
+    // 返回的键名与含义保持不变，调用方无需改动。
+    $post = wm_one('SELECT COUNT(*) AS total,
+                           COALESCE(SUM(status = 1), 0) AS online,
+                           COALESCE(SUM(DATE(created_at) = CURDATE()), 0) AS today,
+                           COALESCE(SUM(views), 0) AS views
+                    FROM ' . $t('post')) ?? [];
+    $s['posts']        = (int)($post['total'] ?? 0);
+    $s['posts_online'] = (int)($post['online'] ?? 0);
+    $s['posts_today']  = (int)($post['today'] ?? 0);
+    $s['views']        = (int)($post['views'] ?? 0);
+
+    $like = wm_one('SELECT COUNT(*) AS total,
+                           COALESCE(SUM(DATE(created_at) = CURDATE()), 0) AS today
+                    FROM ' . $t('like')) ?? [];
+    $s['likes']       = (int)($like['total'] ?? 0);
+    $s['likes_today'] = (int)($like['today'] ?? 0);
+
+    $cmt = wm_one('SELECT COUNT(*) AS total,
+                          COALESCE(SUM(status = 1), 0) AS ok,
+                          COALESCE(SUM(status = 0), 0) AS wait,
+                          COALESCE(SUM(status = 2), 0) AS block
+                   FROM ' . $t('comment')) ?? [];
+    $s['comments']       = (int)($cmt['total'] ?? 0);
+    $s['comments_ok']    = (int)($cmt['ok'] ?? 0);
+    $s['comments_wait']  = (int)($cmt['wait'] ?? 0);
+    $s['comments_block'] = (int)($cmt['block'] ?? 0);
+
+    $s['categories'] = (int)wm_value('SELECT COUNT(*) FROM ' . $t('category'));
+
+    $media = wm_one("SELECT COALESCE(SUM(type = 'image'), 0) AS images,
+                            COALESCE(SUM(type = 'video'), 0) AS videos,
+                            COALESCE(SUM(CASE WHEN type = 'image' THEN size ELSE 0 END), 0) AS image_bytes,
+                            COALESCE(SUM(CASE WHEN type = 'video' THEN size ELSE 0 END), 0) AS video_bytes
+                     FROM " . $t('media')) ?? [];
+    $s['images']      = (int)($media['images'] ?? 0);
+    $s['videos']      = (int)($media['videos'] ?? 0);
+    $s['image_bytes'] = (int)($media['image_bytes'] ?? 0);
+    $s['video_bytes'] = (int)($media['video_bytes'] ?? 0);
+    $s['media_bytes'] = $s['image_bytes'] + $s['video_bytes'];
     return $s;
 }
 

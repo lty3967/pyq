@@ -1,4 +1,13 @@
 <?php
+/**
+ * 用户中心公共引导 + 页面骨架
+ *
+ * 所有 user/*.php（除登录/注册/退出）都先 require 本文件：
+ *   1. 加载 includes/init.php（常量、配置、数据库、会话）
+ *   2. wm_require_user() 校验登录态，未登录直接跳转登录页
+ *   3. 提供 user_head() / user_foot() / user_flash() 三个布局函数
+ * 页面内通过 global $user 获取当前登录用户数组。
+ */
 declare(strict_types=1);
 
 require dirname(__DIR__) . '/includes/init.php';
@@ -60,13 +69,6 @@ function user_foot(): void
 
 function user_flash(): void
 {
-    if (empty($_SESSION['_flash']) || !is_array($_SESSION['_flash'])) {
-        return;
-    }
-
-    $flash = $_SESSION['_flash'];
-    unset($_SESSION['_flash']);
-
-    $class = !empty($flash['ok']) ? 'ok' : 'err';
-    echo '<div class="alert ' . $class . '">' . e((string) $flash['msg']) . '</div>';
+    // 与后台共用同一套渲染逻辑
+    echo wm_flash_html();
 }

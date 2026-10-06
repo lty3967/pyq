@@ -5,16 +5,44 @@
 declare(strict_types=1);
 if (!defined('WM_INIT')) { exit('403'); }
 
-/** HTML 转义输出 */
+/**
+ * HTML 转义输出
+ *
+ * 参数刻意不使用 string 强类型声明：模板中存在 e((int)$x)、e(null) 等调用，
+ * 而调用方文件普遍 declare(strict_types=1)，声明 string 会直接抛 TypeError。
+ * 因此用 @param mixed 标注语义，内部统一 (string) 转换，行为与声明前一致。
+ *
+ * @param mixed $str 标量或 null；数组/对象属于调用方错误，按空串处理
+ * @return string
+ */
 function e($str): string
 {
+    // 数组与无 __toString 的对象直接转字符串会触发 Notice 并输出 "Array"，
+    // 既污染页面又刷错误日志，这里降级为空串
+    if (is_array($str) || (is_object($str) && !method_exists($str, '__toString'))) {
+        return '';
+    }
     return htmlspecialchars((string)$str, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8');
 }
 
-/** JS 上下文安全输出（用于内联 JSON） */
+/**
+ * JS 上下文安全输出（用于内联 JSON）
+ *
+ * @param mixed $data 任意可 JSON 序列化的数据（模板里通常传入配置数组）
+ * @return string 合法的 JS 字面量，可直接嵌入 <script>
+ */
 function ejs($data): string
 {
-    return json_encode($data, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+    $flags = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT;
+    $json = json_encode($data, $flags);
+    if ($json === false) {
+        // json_encode 遇无效 UTF-8（如历史 GBK 残留数据）会失败返回 false，
+        // 而返回类型声明为 string，直接返回 false 在 strict_types 下会抛 TypeError。
+        // 先按替换字符重试一次，仍失败则降级为 null 字面量，
+        // 保证 <script> 内始终是合法 JS，不会因一条脏数据整页崩溃。
+        $json = json_encode($data, $flags | JSON_INVALID_UTF8_SUBSTITUTE);
+    }
+    return $json === false ? 'null' : $json;
 }
 
 /** 统一 JSON 响应并终止 */
@@ -53,12 +81,31 @@ function wm_input_int(string $key, string $method = 'POST', int $default = 0): i
     return $v === false ? $default : (int)$v;
 }
 
+/**
+ * 判断某个 IP 是否属于「可信代理」（内网 / 回环 / 保留段）。
+ * 只有来自可信代理的请求才允许采信 X-Forwarded-For。
+ */
+function wm_is_trusted_proxy(string $ip): bool
+{
+    if (filter_var($ip, FILTER_VALIDATE_IP) === false) {
+        return false;
+    }
+    // FILTER_FLAG_NO_PRIV_RANGE | NO_RES_RANGE 会在 IP 属于私有或保留网段时返回 false，
+    // 也就是「公网 IP 才返回真值」——取反即得到「是内网/保留地址」
+    return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false;
+}
+
 /** 获取真实客户端 IP */
 function wm_client_ip(): string
 {
     $remote = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
-    $trustProxy = (string)wm_setting('trust_proxy', '0') === '1';
-    if ($trustProxy) {
+    // 0 = 完全不信任；1 = 仅内网/回环来源才信任（默认，防伪造）；
+    // 2 = 始终信任（Cloudflare / 独立反代服务器，此时 REMOTE_ADDR 是对方公网 IP）
+    $trustProxy = (string)wm_setting('trust_proxy', '0');
+    if ($trustProxy !== '0' && ($trustProxy === '2' || wm_is_trusted_proxy($remote))) {
+        // 只有直连来源本身是内网/回环（说明请求确实经过了本机或内网的反向代理）时
+        // 才采信 XFF。否则任何人发一个 X-Forwarded-For 头就能伪造 IP，
+        // 进而绕过登录失败锁定、IP 黑名单与全部频率限制。
         $xff = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? '';
         if ($xff !== '') {
             $parts = explode(',', $xff);
@@ -83,11 +130,24 @@ function wm_ip_hash(string $ip = ''): string
     return substr(hash_hmac('sha256', $ip, $salt), 0, 32);
 }
 
-/** 微信风格相对时间 */
+/**
+ * 微信风格相对时间
+ *
+ * @param mixed $ts 时间戳，或可被 strtotime 解析的日期字符串（如数据库的 datetime）；
+ *                  null / 非法值 / 无法解析的字符串一律返回空串
+ * @return string
+ */
 function wm_time_ago($ts): string
 {
+    // 数组与无 __toString 的对象转字符串会触发 Notice，按非法值处理
+    if (is_array($ts) || (is_object($ts) && !method_exists($ts, '__toString'))) {
+        return '';
+    }
     $ts = is_numeric($ts) ? (int)$ts : (int)strtotime((string)$ts);
     if ($ts <= 0) { return ''; }
+    // date() 对超出 9999-12-31 的时间戳会返回 false，
+    // 而返回类型声明为 string，返回 false 在 strict_types 下会抛 TypeError
+    if ($ts > 253402300799) { return ''; }
     $diff = time() - $ts;
     if ($diff < 0) { return date('Y-m-d H:i', $ts); }
     if ($diff < 60) { return '刚刚'; }
@@ -191,7 +251,6 @@ function wm_dir_size(string $dir): int
     return $size;
 }
 
-/** 写操作日志 */
 /** 设置跨请求的一次性提示消息 */
 function wm_flash(bool $ok, string $msg): void
 {
@@ -201,6 +260,21 @@ function wm_flash(bool $ok, string $msg): void
     ];
 }
 
+/**
+ * 取出并渲染一次性提示（用户中心与后台共用，取后即销毁）
+ */
+function wm_flash_html(): string
+{
+    if (empty($_SESSION['_flash']) || !is_array($_SESSION['_flash'])) {
+        return '';
+    }
+    $flash = $_SESSION['_flash'];
+    unset($_SESSION['_flash']);
+    $class = !empty($flash['ok']) ? 'ok' : 'err';
+    return '<div class="alert ' . $class . '">' . e((string)$flash['msg']) . '</div>';
+}
+
+/** 写操作日志 */
 function wm_log(string $action, string $detail = '', int $adminId = 0): void
 {
     try {
@@ -215,4 +289,126 @@ function wm_log(string $action, string $detail = '', int $adminId = 0): void
     } catch (Throwable $e) {
         error_log('log fail: ' . $e->getMessage());
     }
+}
+
+/**
+ * 统一分页计算：把越界页码收敛到最后一页。
+ * 不做收敛的话 ?page=999999 会生成巨大 OFFSET，MySQL 需扫描并丢弃大量行，
+ * 是一个低成本的拒绝服务入口。
+ * @return array{page:int,pages:int,offset:int}
+ */
+function wm_paging(int $total, int $page, int $size): array
+{
+    $size = max(1, $size);
+    $pages = (int)max(1, (int)ceil($total / $size));
+    $page = min(max(1, $page), $pages);
+    return ['page' => $page, 'pages' => $pages, 'offset' => ($page - 1) * $size];
+}
+
+/**
+ * LIKE 通配符转义：反斜杠必须最先处理，否则会吞掉后续转义结果
+ */
+function wm_like_escape(string $keyword): string
+{
+    return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $keyword);
+}
+
+/**
+ * IP 黑名单（统一解析：换行 / 中英文逗号 / 竖线均可分隔）
+ */
+function wm_blocked_ips(): array
+{
+    $out = [];
+    foreach (preg_split('/[\r\n,，|]+/', (string)wm_setting('block_ips', '')) ?: [] as $ip) {
+        $ip = trim($ip);
+        if ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP) && !in_array($ip, $out, true)) {
+            $out[] = $ip;
+        }
+    }
+    return $out;
+}
+
+/**
+ * 校验图片/视频相对路径：格式白名单 + realpath 越界校验，非法返回 ''
+ */
+function wm_safe_media_path(string $path): string
+{
+    $p = ltrim(str_replace('\\', '/', $path), '/');
+    if (!preg_match('#^uploads/(image|video)/\d{4}/\d{2}/[A-Za-z0-9_\-]+\.[A-Za-z0-9]{2,5}$#', $p)) {
+        return '';
+    }
+    $abs = realpath(WM_ROOT . '/' . $p);
+    $base = realpath(WM_UPLOAD);
+    if ($abs === false || $base === false || strpos($abs, $base . DIRECTORY_SEPARATOR) !== 0) {
+        return '';
+    }
+    return $p;
+}
+
+/**
+ * 校验缩略图相对路径，非法返回 ''
+ */
+function wm_safe_thumb_path(string $path): string
+{
+    $p = ltrim(str_replace('\\', '/', $path), '/');
+    if ($p === '' || !preg_match('#^uploads/thumb/\d{4}/\d{2}/[A-Za-z0-9_\-]+\.[A-Za-z0-9]{2,5}$#', $p)) {
+        return '';
+    }
+    // 与 wm_safe_media_path 同口径：正则之外再补 realpath 越界校验，
+    // 否则客户端可把 thumb 指向 uploads 内的任意同名格式文件
+    $abs = realpath(WM_ROOT . '/' . $p);
+    $base = realpath(WM_UPLOAD);
+    if ($abs === false || $base === false || strpos($abs, $base . DIRECTORY_SEPARATOR) !== 0) {
+        return '';
+    }
+    return $p;
+}
+
+/**
+ * 敏感配置加密存储（SMTP 密码等）。无 openssl 时退化为明文，不影响可用性。
+ */
+function wm_secret_encode(string $plain): string
+{
+    if ($plain === '' || !function_exists('openssl_encrypt')) {
+        return $plain;
+    }
+    $key = hash('sha256', defined('AUTH_SALT') ? AUTH_SALT : 'wm', true);
+    $iv = random_bytes(16);
+    $raw = openssl_encrypt($plain, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
+    if ($raw === false) {
+        return $plain;
+    }
+    return 'enc:' . base64_encode($iv . $raw);
+}
+
+/**
+ * 读取敏感配置：无 enc: 前缀的视为历史明文，保证平滑升级
+ */
+function wm_secret_decode(string $stored): string
+{
+    if ($stored === '' || strpos($stored, 'enc:') !== 0) {
+        return $stored;
+    }
+    if (!function_exists('openssl_decrypt')) {
+        return '';
+    }
+    $raw = base64_decode(substr($stored, 4), true);
+    if ($raw === false || strlen($raw) < 33) {
+        return '';
+    }
+    $key = hash('sha256', defined('AUTH_SALT') ? AUTH_SALT : 'wm', true);
+    $out = openssl_decrypt(substr($raw, 16), 'AES-256-CBC', $key, OPENSSL_RAW_DATA, substr($raw, 0, 16));
+    return $out === false ? '' : $out;
+}
+
+/**
+ * 校验可作为头像 / 封面的上传路径（允许 image 与 thumb），非法返回 ''
+ */
+function wm_safe_display_path(string $path): string
+{
+    $p = ltrim(str_replace('\\', '/', $path), '/');
+    if (!preg_match('#^uploads/(image|thumb)/\d{4}/\d{2}/[A-Za-z0-9_\-]+\.[A-Za-z0-9]{2,5}$#', $p)) {
+        return '';
+    }
+    return $p;
 }

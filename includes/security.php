@@ -106,6 +106,22 @@ function wm_password_weak(string $p): string
 }
 
 /**
+ * 昵称合法性校验，返回错误信息或 ''
+ * 昵称会同时用于评论展示与邮件通知；允许尖括号/网址的话，
+ * 该账号在前台评论时会卡在 api.php 的字符校验上而永远发不出评论。
+ */
+function wm_nickname_error(string $n): string
+{
+    if ($n === '' || mb_strlen($n) > 20) {
+        return '昵称需为 1-20 字';
+    }
+    if (preg_match('#[<>]#u', $n) || preg_match('#https?://#i', $n)) {
+        return '昵称不能包含尖括号（< >）或网址';
+    }
+    return '';
+}
+
+/**
  * 通用频率限制（基于数据库计数表）
  * @return bool true=允许
  */
@@ -113,12 +129,21 @@ function wm_rate_limit(string $bucket, int $max, int $window, string $subject = 
 {
     $subject = $subject !== '' ? $subject : wm_ip_hash();
     $key = substr(hash('sha256', $bucket . '|' . $subject), 0, 64);
+    $window = max(1, $window);
     try {
-        wm_exec('DELETE FROM ' . wm_t('ratelimit') . ' WHERE expire_at < NOW()');
-        $row = wm_one('SELECT id, hits FROM ' . wm_t('ratelimit') . ' WHERE rkey = ? LIMIT 1', [$key]);
+        // 概率性清理过期记录（约 1%），避免每次互动都触发一次全表 DELETE
+        if (random_int(1, 100) === 1) {
+            wm_exec('DELETE FROM ' . wm_t('ratelimit') . ' WHERE expire_at < NOW()');
+        }
+        // 只统计「尚未过期」的窗口。原实现读取时不判断 expire_at，
+        // 导致计数一旦触顶就永久拒绝，只有靠 1% 概率的清理才会解锁。
+        $row = wm_one('SELECT id, hits FROM ' . wm_t('ratelimit') . '
+                       WHERE rkey = ? AND expire_at > NOW() LIMIT 1', [$key]);
         if ($row === null) {
+            // 首次进入或窗口已过期：清掉同名残留后重新开窗
+            wm_exec('DELETE FROM ' . wm_t('ratelimit') . ' WHERE rkey = ?', [$key]);
             wm_exec('INSERT INTO ' . wm_t('ratelimit') . ' (rkey, hits, expire_at) VALUES (?, 1, DATE_ADD(NOW(), INTERVAL ? SECOND))
-                     ON DUPLICATE KEY UPDATE hits = hits + 1', [$key, $window]);
+                     ON DUPLICATE KEY UPDATE hits = 1, expire_at = DATE_ADD(NOW(), INTERVAL ' . $window . ' SECOND)', [$key, $window]);
             return true;
         }
         if ((int)$row['hits'] >= $max) {
@@ -182,11 +207,23 @@ function wm_badwords(): array
  */
 function wm_badword_hit(string $text): array
 {
+    // 归一化后的词表做静态缓存：否则每次调用都要重复归一化全部词条，
+    // 回溯扫描（5000 条评论 × 2000 词）会直接超时
+    static $normWords = null;
+    if ($normWords === null) {
+        $normWords = [];
+        foreach (wm_badwords() as $w) {
+            $wn = mb_strtolower(preg_replace('/\s+/u', '', $w) ?? $w);
+            if ($wn !== '') { $normWords[$wn] = $w; }
+        }
+    }
+    if (!$normWords) { return []; }
+
     $hits = [];
     $norm = mb_strtolower(preg_replace('/\s+/u', '', $text) ?? $text);
-    foreach (wm_badwords() as $w) {
-        $wn = mb_strtolower(preg_replace('/\s+/u', '', $w) ?? $w);
-        if ($wn !== '' && mb_strpos($norm, $wn) !== false) {
+    // UTF-8 自同步，字节级 strpos 与 mb_strpos 结果一致但快得多
+    foreach ($normWords as $wn => $w) {
+        if (strpos($norm, (string)$wn) !== false) {
             $hits[] = $w;
         }
     }
@@ -210,7 +247,12 @@ function wm_admin_id(): int
     if ($id <= 0) { return 0; }
     $timeout = (int)wm_setting('session_timeout', '7200');
     $last = (int)($_SESSION['admin_active'] ?? 0);
-    if ($last > 0 && time() - $last > $timeout) {
+    // 尚无活跃基准时先落一次时间戳，避免首次请求跳过超时判断
+    if ($last <= 0) {
+        $_SESSION['admin_active'] = time();
+        return $id;
+    }
+    if (time() - $last > $timeout) {
         wm_admin_logout();
         return 0;
     }
@@ -265,9 +307,17 @@ function wm_user_id(): int
 {
     $id = (int)($_SESSION['user_id'] ?? 0);
     if ($id <= 0) { return 0; }
-    $timeout = (int)wm_setting('user_session_timeout', '7200');
+    // 未单独配置时回退到后台「会话超时」，保证该项在后台可配置
+    $timeout = (int)wm_setting('user_session_timeout', '0');
+    if ($timeout <= 0) {
+        $timeout = (int)wm_setting('session_timeout', '7200');
+    }
     $last = (int)($_SESSION['user_active'] ?? 0);
-    if ($last > 0 && time() - $last > $timeout) {
+    if ($last <= 0) {
+        $_SESSION['user_active'] = time();
+        return $id;
+    }
+    if (time() - $last > $timeout) {
         wm_user_logout();
         return 0;
     }
@@ -303,13 +353,4 @@ function wm_require_user(bool $json = false): array
         wm_redirect('login.php');
     }
     return $user;
-}
-
-function wm_require_user_or_admin(): array
-{
-    $user = wm_user();
-    if ($user !== null) { return ['type' => 'user', 'data' => $user]; }
-    $admin = wm_admin();
-    if ($admin !== null) { return ['type' => 'admin', 'data' => $admin]; }
-    wm_redirect('../admin/login.php');
 }

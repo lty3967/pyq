@@ -11,6 +11,8 @@ define('WM_DATA', WM_ROOT . '/data');
 define('WM_UPLOAD', WM_ROOT . '/uploads');
 define('WM_CONFIG_FILE', WM_INC . '/config.php');
 define('WM_LOCK_FILE', WM_DATA . '/install.lock');
+// 安装页不加载 init.php（需自行定义常量），此处单独声明以便展示与程序一致的版本号
+define('WM_VERSION', '1.0.8');
 
 mb_internal_encoding('UTF-8');
 date_default_timezone_set('Asia/Shanghai');
@@ -23,15 +25,30 @@ if (!headers_sent()) {
 
 if (!is_dir(WM_DATA)) { @mkdir(WM_DATA, 0750, true); }
 
-if (is_file(WM_LOCK_FILE)) {
+// 已存在配置文件时同样拒绝安装：仅靠 install.lock 保护，一旦 lock 被删
+// 且 install 目录未清理，攻击者即可重装并覆盖管理员账号
+if (is_file(WM_LOCK_FILE) || is_file(WM_CONFIG_FILE)) {
     http_response_code(403);
-    exit('<meta charset="utf-8"><div style="font:15px/1.8 sans-serif;padding:40px;text-align:center">系统已安装完成。<br>如需重新安装，请手动删除 <code>data/install.lock</code> 文件。<br><a href="../index.php">进入首页</a></div>');
+    exit('<meta charset="utf-8"><div style="font:15px/1.8 sans-serif;padding:40px;text-align:center">系统已安装完成。<br>如需重新安装，请先删除 <code>includes/config.php</code> 与 <code>data/install.lock</code>。<br><a href="../index.php">进入首页</a></div>');
 }
 
 require WM_INC . '/functions.php';
 require __DIR__ . '/sql.php';
 
 session_name('WMINST');
+// 与主程序同口径：仅 Cookie 传输 + HttpOnly + SameSite + 严格模式，防会话固定
+ini_set('session.use_strict_mode', '1');
+ini_set('session.use_only_cookies', '1');
+ini_set('session.cookie_httponly', '1');
+session_set_cookie_params([
+    'lifetime' => 0,
+    'path'     => '/',
+    'domain'   => '',
+    'secure'   => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https'),
+    'httponly' => true,
+    'samesite' => 'Lax',
+]);
 session_start();
 if (empty($_SESSION['_csrf'])) {
     $_SESSION['_csrf'] = bin2hex(random_bytes(32));
@@ -139,6 +156,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 foreach (wm_schema($p) as $sql) {
                     $pdo->exec($sql);
                 }
+                // 可选增强：点赞去重键升级为「账号 / IP」双口径（低版本 MySQL 自动跳过）
+                wm_schema_enhance($pdo, $p);
                 // 默认设置
                 $settings = wm_default_settings();
                 $settings['site_name'] = $siteName;
@@ -166,7 +185,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $salt = bin2hex(random_bytes(32));
                 $conf = "<?php\n"
                     . "// 自动生成于 " . date('Y-m-d H:i:s') . "，请勿泄露\n"
-                    . "if (!defined('WM_INIT')) { exit('403'); }\n"
+                    . "if (!defined('WM_INIT')) { http_response_code(403); exit('403'); }\n"
                     . "define('DB_HOST', " . var_export($db['host'], true) . ");\n"
                     . "define('DB_PORT', " . var_export((int)$db['port'], true) . ");\n"
                     . "define('DB_NAME', " . var_export($db['name'], true) . ");\n"
@@ -180,8 +199,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     @chmod(WM_CONFIG_FILE, 0640);
                     @file_put_contents(WM_LOCK_FILE, date('Y-m-d H:i:s') . " installed\n", LOCK_EX);
                     @chmod(WM_LOCK_FILE, 0640);
-                    // 防目录列出与直接访问
-                    @file_put_contents(WM_DATA . '/index.html', '');
+                    // 防目录列出与直接访问（data/index.php 已随源码存在时无需重复写）
+                    if (!is_file(WM_DATA . '/index.php')) {
+                        @file_put_contents(WM_DATA . '/index.html', '');
+                    }
                     $_SESSION['inst_done_user'] = $username;
                     unset($_SESSION['inst_db']);
                     header('Location: index.php?step=4');
@@ -210,13 +231,13 @@ $prefill = $_SESSION['inst_db'] ?? ['host' => '127.0.0.1', 'port' => 3306, 'name
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <title>安装向导 - 朋友圈系统</title>
-<link rel="stylesheet" href="../assets/css/install.css?v=<?= WM_INSTALL ? '1' : '1' ?>">
+<link rel="stylesheet" href="../assets/css/install.css?v=1">
 </head>
 <body>
 <div class="wrap">
   <header class="hd">
     <div class="logo">朋友圈系统 安装向导</div>
-    <div class="ver">v1.0.0</div>
+    <div class="ver">v<?= e(WM_VERSION) ?></div>
   </header>
   <ol class="steps">
     <?php foreach ([1 => '环境检测', 2 => '数据库配置', 3 => '创建管理员', 4 => '安装完成'] as $i => $label): ?>
@@ -298,7 +319,7 @@ $prefill = $_SESSION['inst_db'] ?? ['host' => '127.0.0.1', 'port' => 3306, 'name
     <ul class="next">
       <li>为了安全，请立即<strong>删除服务器上的 install 目录</strong>。</li>
       <li>配置文件已写入 <code>includes/config.php</code>，请勿对外泄露。</li>
-      <li>建议在宝塔面板中为 <code>data/</code>、<code>includes/</code> 目录禁止外部访问（本程序已内置 .htaccess 与 nginx 规则建议）。</li>
+      <li><b>禁止外部访问 <code>data/</code> 与 <code>includes/</code> 目录</b>：Apache 靠自带 <code>.htaccess</code> 自动生效；Nginx 不读 .htaccess，可在站点配置中禁止访问（宝塔「禁止访问目录」或「配置文件」粘贴规则，不强制单独 nginx.conf 文件），或把这两个目录移出网站根目录；<code>config.php</code> 已内置 WM_INIT 守卫，即使被直接请求也返回 403，可作兜底。</li>
     </ul>
     <div class="act">
       <a class="btn" href="../index.php">访问前台</a>

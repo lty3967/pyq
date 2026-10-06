@@ -1,4 +1,15 @@
 <?php
+/**
+ * 用户中心 - 发布 / 编辑动态
+ *
+ * 流程要点：
+ *   - 媒体先经 user/upload.php 上传并登记到 media 表（post_id = 0），
+ *     本页只接收 media_data 里的 media id，再按 id + user_id 校验归属后关联到动态，
+ *     避免客户端伪造任意文件路径。
+ *   - 编辑时先把旧媒体置为 post_id = 0，再重新关联本次选中的，
+ *     真正被移除的才在事务提交成功后删除物理文件。
+ *   - 违禁词按后台「命中处理方式」执行：拒绝 / 打码 / 强制转草稿。
+ */
 declare(strict_types=1);
 
 require __DIR__ . '/layout.php';
@@ -46,6 +57,26 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $error = '分类无效';
     }
 
+    // 敏感词：与评论共用词库，按后台「命中处理方式」执行
+    $hits = array_merge(wm_badword_hit($content), wm_badword_hit($location));
+    if ($hits) {
+        $mode = (string) wm_setting('comment_mask_mode', 'reject');
+        if ($mode === 'reject') {
+            $error = '内容包含违禁词，请修改后重新发布';
+        } elseif ($mode === 'mask') {
+            $content = wm_badword_mask($content);
+            $location = wm_badword_mask($location);
+        } else {
+            // audit：强制转为草稿，由管理员在后台审核后发布
+            $status = 0;
+        }
+    }
+
+    // 发布频率限制（只统计新建，编辑保存不应消耗额度）
+    if ($error === '' && $id <= 0 && !wm_rate_limit('user_post', 20, 3600, 'user' . $userId)) {
+        $error = '发布过于频繁，请稍后再试';
+    }
+
     $rawMedia = json_decode((string) ($_POST['media_data'] ?? '[]'), true);
     $selectedMedia = [];
 
@@ -72,14 +103,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
     }
 
-    $videoMedia = array_values(array_filter(
-        $selectedMedia,
-        static fn(array $item): bool => $item['type'] === 'video'
-    ));
-
-    if ($videoMedia) {
-        $selectedMedia = [$videoMedia[0]];
-    }
+    // 视频与图片不混排，视频仅 1 个（与后台共用同一规则）
+    $selectedMedia = wm_media_pick($selectedMedia, 9);
 
     if ($content === '' && !$selectedMedia) {
         $error = '请填写文字或上传媒体';
@@ -160,7 +185,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 }
             }
 
-            wm_flash(true, $id > 0 ? '动态已更新' : '动态已发布');
+            // 顺带回收本人长期未关联到动态的上传，避免 post_id = 0 的孤儿文件堆积
+            wm_media_purge_orphans(24, $userId, 200);
+
+            wm_flash(true, $id > 0
+                ? '动态已更新'
+                : ((int) $status === 1 ? '动态已发布' : '动态已存为草稿，待管理员审核后可见'));
             wm_redirect('index.php');
         } catch (Throwable $exception) {
             if ($db->inTransaction()) {
@@ -173,6 +203,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 }
 
 $categories = wm_categories(true);
+// 校验失败回填时要用本次提交的媒体，否则用户刚选的图会被丢弃
+$shownMedia = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && isset($selectedMedia))
+    ? $selectedMedia
+    : $media;
 $mediaData = array_map(
     static fn(array $item): array => [
         'id' => (int) $item['id'],
@@ -183,7 +217,7 @@ $mediaData = array_map(
         'height' => (int) $item['height'],
         'size' => (int) $item['size'],
     ],
-    $media
+    $shownMedia
 );
 
 user_head($id > 0 ? '编辑动态' : '发布动态');

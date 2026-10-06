@@ -100,11 +100,8 @@ function wm_head(string $pageTitle): void
     </header>
     <div class="content">
     <?php
-    $flash = $_SESSION['_flash'] ?? null;
-    unset($_SESSION['_flash']);
-    if (is_array($flash)) {
-        echo '<div class="alert ' . ($flash['ok'] ? 'ok' : 'err') . '">' . e((string)$flash['msg']) . '</div>';
-    }
+    // 与前台用户中心共用同一套渲染逻辑
+    echo wm_flash_html();
 }
 
 /** 输出后台页面尾部 */

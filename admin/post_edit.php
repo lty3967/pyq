@@ -4,7 +4,7 @@
  */
 declare(strict_types=1);
 require __DIR__ . '/inc/layout.php';
-require WM_INC . '/upload.php';
+require_once WM_INC . '/upload.php';
 $admin = wm_require_admin();
 
 $id = wm_input_int('id', 'GET', 0);
@@ -48,37 +48,22 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         foreach ($decoded as $m) {
             if (!is_array($m)) { continue; }
             $mType = ($m['type'] ?? '') === 'video' ? 'video' : 'image';
-            $mPath = ltrim(str_replace('\\', '/', (string)($m['path'] ?? '')), '/');
-            if (!preg_match('#^uploads/(image|video)/\d{4}/\d{2}/[A-Za-z0-9_\-]+\.[A-Za-z0-9]{2,5}$#', $mPath)) {
-                continue;
-            }
-            $abs = realpath(WM_ROOT . '/' . $mPath);
-            $base = realpath(WM_UPLOAD);
-            if ($abs === false || $base === false || strpos($abs, $base . DIRECTORY_SEPARATOR) !== 0) {
-                continue;
-            }
-            $mThumb = ltrim(str_replace('\\', '/', (string)($m['thumb'] ?? '')), '/');
-            if ($mThumb !== '' && !preg_match('#^uploads/thumb/\d{4}/\d{2}/[A-Za-z0-9_\-]+\.[A-Za-z0-9]{2,5}$#', $mThumb)) {
-                $mThumb = '';
-            }
+            // 路径白名单 + realpath 越界校验统一交给公共函数
+            $mPath = wm_safe_media_path((string)($m['path'] ?? ''));
+            if ($mPath === '') { continue; }
             $media[] = [
                 'type' => $mType,
                 'path' => $mPath,
-                'thumb' => $mThumb,
+                'thumb' => wm_safe_thumb_path((string)($m['thumb'] ?? '')),
                 'width' => max(0, min(100000, (int)($m['width'] ?? 0))),
                 'height' => max(0, min(100000, (int)($m['height'] ?? 0))),
-                'size' => (int)@filesize($abs),
+                'size' => (int)@filesize(WM_ROOT . '/' . $mPath),
             ];
             if (count($media) >= 9) { break; }
         }
     }
-    // 视频与图片不混排，视频仅 1 个
-    $hasVideo = false;
-    foreach ($media as $m) { if ($m['type'] === 'video') { $hasVideo = true; break; } }
-    if ($hasVideo) {
-        $media = array_values(array_filter($media, static fn($m) => $m['type'] === 'video'));
-        $media = array_slice($media, 0, 1);
-    }
+    // 视频与图片不混排，视频仅 1 个（与前台用户端共用同一规则）
+    $media = wm_media_pick($media, 9);
 
     if ($content === '' && !$media) {
         $errors[] = '请填写文字内容或上传图片/视频';
@@ -98,6 +83,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $mediaType = 'none';
         if ($media) { $mediaType = $media[0]['type'] === 'video' ? 'video' : 'image'; }
 
+        $postId = 0;
+        $removedMedia = [];
+        // 媒体是「先全删再重建」，重建时必须带上原动态的归属用户，
+        // 否则用户动态被管理员编辑后 media.user_id 会被清零，
+        // 用户再编辑时按 user_id 就查不到自己的图（看不见也删不掉）
+        $ownerId = $id > 0 ? (int)($post['user_id'] ?? 0) : 0;
         $pdo = wm_db();
         try {
             $pdo->beginTransaction();
@@ -107,13 +98,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                     [$catId, $content, $mediaType, $location, $status, $isTop, $allowCmt, $id]);
                 $postId = $id;
 
-                // 差异化处理媒体：删除已移除文件
+                // 先收集被移除的媒体，物理文件等事务提交成功后再删
                 $oldRows = wm_all('SELECT * FROM ' . wm_t('media') . ' WHERE post_id = ?', [$postId]);
                 $newPaths = array_column($media, 'path');
                 foreach ($oldRows as $o) {
                     if (!in_array((string)$o['path'], $newPaths, true)) {
-                        wm_media_unlink((string)$o['path']);
-                        if ((string)$o['thumb'] !== '') { wm_media_unlink((string)$o['thumb']); }
+                        $removedMedia[] = $o;
                     }
                 }
                 wm_exec('DELETE FROM ' . wm_t('media') . ' WHERE post_id = ?', [$postId]);
@@ -125,11 +115,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             }
 
             foreach ($media as $i => $m) {
-                wm_exec('INSERT INTO ' . wm_t('media') . ' (post_id, type, path, thumb, width, height, size, sort, created_at)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())',
-                    [$postId, $m['type'], $m['path'], $m['thumb'], $m['width'], $m['height'], $m['size'], $i]);
+                wm_exec('INSERT INTO ' . wm_t('media') . ' (post_id, user_id, type, path, thumb, width, height, size, sort, created_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+                    [$postId, $ownerId, $m['type'], $m['path'], $m['thumb'], $m['width'], $m['height'], $m['size'], $i]);
             }
             $pdo->commit();
+
+            // 事务提交成功后再删除物理文件，避免回滚造成「记录还在、文件已丢」
+            foreach ($removedMedia as $o) {
+                wm_media_unlink((string)$o['path']);
+                if ((string)$o['thumb'] !== '') { wm_media_unlink((string)$o['thumb']); }
+            }
         } catch (Throwable $ex) {
             if ($pdo->inTransaction()) { $pdo->rollBack(); }
             error_log('post save fail: ' . $ex->getMessage());

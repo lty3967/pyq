@@ -80,7 +80,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 $words = (string)wm_setting('bad_words', '');
 $wordCount = count(wm_badwords());
 $ips = (string)wm_setting('block_ips', '');
-$ipCount = count(array_filter(array_map('trim', preg_split('/[\r\n]+/', $ips) ?: [])));
+$ipCount = count(wm_blocked_ips());
 $mode = (string)wm_setting('comment_mask_mode', 'reject');
 
 wm_head('违禁词设置');

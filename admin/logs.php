@@ -24,11 +24,13 @@ $where = '';
 $params = [];
 if ($kw !== '') {
     $where = ' WHERE (l.action LIKE :kw OR l.detail LIKE :kw OR l.ip = :ipx)';
-    $params[':kw'] = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $kw) . '%';
+    $params[':kw'] = '%' . wm_like_escape($kw) . '%';
     $params[':ipx'] = $kw;
 }
 $total = (int)wm_value('SELECT COUNT(*) FROM ' . wm_t('log') . ' l' . $where, $params);
-$offset = ($page - 1) * $size;
+$pg = wm_paging($total, $page, $size);
+$page = $pg['page'];
+$offset = $pg['offset'];
 $rows = wm_all('SELECT l.*, a.username FROM ' . wm_t('log') . ' l
                 LEFT JOIN ' . wm_t('admin') . ' a ON a.id = l.admin_id
                 ' . $where . ' ORDER BY l.id DESC LIMIT ' . $size . ' OFFSET ' . $offset, $params);

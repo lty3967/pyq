@@ -34,10 +34,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                     break;
                 case 'top':
                     wm_exec('UPDATE ' . wm_t('post') . ' SET is_top = 1 WHERE id IN (' . $in . ')', $ids);
+                    wm_log('批量置顶', '共 ' . count($ids) . ' 条');
                     wm_flash(true, '已置顶');
                     break;
                 case 'untop':
                     wm_exec('UPDATE ' . wm_t('post') . ' SET is_top = 0 WHERE id IN (' . $in . ')', $ids);
+                    wm_log('批量取消置顶', '共 ' . count($ids) . ' 条');
                     wm_flash(true, '已取消置顶');
                     break;
                 case 'delete':
@@ -57,6 +59,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                             if ((string)$m['thumb'] !== '') { wm_media_unlink((string)$m['thumb']); }
                         }
                         wm_log('删除动态', 'ID：' . implode(',', $ids));
+                        // 媒体文件已删除，让后台的磁盘占用统计立即重算
+                        wm_upload_usage_reset();
                         wm_flash(true, '已删除 ' . $n . ' 条内容及其媒体、评论、点赞');
                     } catch (Throwable $e) {
                         if ($pdo->inTransaction()) { $pdo->rollBack(); }
@@ -68,7 +72,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                     wm_flash(false, '未知操作');
             }
         }
-        wm_redirect('posts.php' . (($_SERVER['QUERY_STRING'] ?? '') !== '' ? '?' . preg_replace('/[^A-Za-z0-9=&_\-]/', '', (string)$_SERVER['QUERY_STRING']) : ''));
+        // 保留原筛选条件原样回跳；原实现用白名单过滤 query，
+        // 会把中文与 URL 编码（%xx）一起吃掉导致筛选丢失，这里只排除控制字符
+        $qs = (string)($_SERVER['QUERY_STRING'] ?? '');
+        wm_redirect('posts.php' . (($qs !== '' && !preg_match('/[\x00-\x1F\x7F]/', $qs)) ? '?' . $qs : ''));
     }
 }
 
@@ -83,7 +90,7 @@ $kw = mb_substr(wm_input('kw', 'GET'), 0, 50);
 
 $list = wm_post_list($page, $size, $catF, true, ['status' => $statusF, 'keyword' => $kw] + ($userF > 0 ? ['user_id' => $userF] : []));
 $cats = wm_categories(false);
-$mediaMap = wm_media_by_posts(array_column($list['rows'], 'id'));
+// wm_post_list() 已把媒体挂到每行的 media 键上，这里无需再查一次
 
 $qs = [];
 if ($statusF !== '') { $qs[] = 'status=' . $statusF; }
@@ -140,7 +147,7 @@ wm_head('内容管理');
       <?php endif; ?>
       <?php foreach ($list['rows'] as $p):
         $pid = (int)$p['id'];
-        $ms = $mediaMap[$pid] ?? []; ?>
+        $ms = $p['media'] ?? []; ?>
         <tr>
           <td><input type="checkbox" name="ids[]" value="<?= $pid ?>"></td>
           <td>

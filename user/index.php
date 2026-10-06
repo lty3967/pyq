@@ -1,4 +1,11 @@
 <?php
+/**
+ * 用户中心 - 我的动态
+ *
+ * 统计（动态数 / 获赞 / 收评 / 总浏览）与最近动态列表。
+ * 列表调用 wm_post_list(..., adminView = true)：
+ * 表示「按作者视角查看」，因而不过滤 status，草稿也会列出来。
+ */
 declare(strict_types=1);
 
 require __DIR__ . '/layout.php';
@@ -27,7 +34,9 @@ $stats = [
     ),
 ];
 
-$list = wm_post_list(1, 10, 0, true, ['user_id' => $userId]);
+$page = max(1, wm_input_int('page', 'GET', 1));
+$size = 10;
+$list = wm_post_list($page, $size, 0, true, ['user_id' => $userId]);
 
 user_head('我的动态');
 user_flash();
@@ -73,5 +82,7 @@ user_flash();
         <?php endforeach; ?>
         </tbody>
     </table>
+
+    <?= wm_pager((int) $list['total'], (int) $list['page'], $size) ?>
 </section>
 <?php user_foot();

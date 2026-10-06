@@ -52,7 +52,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 wm_redirect('index.php');
             }
 
-            wm_login_fail($username);
+            // 只有「账号存在且启用 + 密码错误」才计数；
+            // 账号不存在或已禁用时不计数，避免对任意用户名灌水撑爆限流表
+            if ($row !== null && (int)$row['status'] === 1 && !$valid) {
+                wm_login_fail($username);
+            }
             wm_log('登录失败', '账号：' . $username, 0);
             if ($row !== null && (int)$row['status'] !== 1) {
                 $err = '该账号已被禁用';

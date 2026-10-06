@@ -14,8 +14,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $email = wm_input('email');
         $signature = wm_input('signature');
 
-        if ($nickname === '' || mb_strlen($nickname) > 20) {
-            $error = '昵称需为 1-20 字';
+        if (($nickErr = wm_nickname_error($nickname)) !== '') {
+            $error = $nickErr;
         } elseif ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $error = '邮箱格式不正确';
         } elseif (mb_strlen($signature) > 100) {
@@ -53,6 +53,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
 user_head('账号设置');
 user_flash();
+$userAvatar = wm_safe_display_path((string)$user['avatar']);
 ?>
 <?php if ($error !== ''): ?>
     <div class="alert err"><?= e($error) ?></div>
@@ -75,8 +76,8 @@ user_flash();
                 头像
                 <div class="avatar-editor" data-avatar-editor>
                     <div class="avatar-preview">
-                        <?php if (!empty($user['avatar'])): ?>
-                            <img id="avatarPreview" src="../<?= e((string) $user['avatar']) ?>" alt="当前头像">
+                        <?php if ($userAvatar !== ''): ?>
+                            <img id="avatarPreview" src="../<?= e($userAvatar) ?>" alt="当前头像">
                         <?php else: ?>
                             <span id="avatarPreview" class="avatar-placeholder">暂无</span>
                         <?php endif; ?>

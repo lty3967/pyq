@@ -1,4 +1,11 @@
 <?php
+/**
+ * 用户中心 - 收到的评论
+ *
+ * 权限口径：只处理「别人评论我的动态」，因此查询统一带
+ *   p.user_id = ?（动态归属）AND c.user_id <> ?（排除自己的回复）。
+ * 用户可对自己动态下的评论做通过 / 屏蔽，并以自己身份回复（回复会以 user_id 落库）。
+ */
 declare(strict_types=1);
 
 require __DIR__ . '/layout.php';
@@ -50,13 +57,33 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     if ($action === 'reply') {
         $content = wm_input('content');
+        $interval = max(0, (int) wm_setting('comment_interval', '30'));
+        $maxHour = max(1, (int) wm_setting('comment_max_per_hour', '10'));
+        $subject = 'user' . $userId;
+
         if ($content === '' || mb_strlen($content) > 500) {
             wm_flash(false, '回复内容需为 1-500 字');
+        } elseif ($interval > 0 && !wm_rate_limit('cmt_i', 1, $interval, $subject)) {
+            wm_flash(false, '发言过快，请 ' . $interval . ' 秒后再试');
+        } elseif (!wm_rate_limit('cmt_h', $maxHour, 3600, $subject)) {
+            wm_flash(false, '回复次数已达上限，请稍后再试');
         } else {
+            // 敏感词：与前台评论保持同一套策略
+            $hits = wm_badword_hit($content);
+            $mode = (string) wm_setting('comment_mask_mode', 'reject');
+            if ($hits && $mode === 'reject') {
+                wm_flash(false, '内容包含违禁词，发布失败');
+                wm_redirect('comments.php');
+            }
+            if ($hits && $mode === 'mask') {
+                $content = wm_badword_mask($content);
+            }
+            $status = ($hits && $mode === 'audit') ? 0 : 1;
+
             $nickname = (string) ($user['nickname'] ?: $user['username']);
             wm_exec(
-                'INSERT INTO ' . wm_t('comment') . ' (post_id, user_id, parent_id, nickname, email, content, status, ip, ip_hash, ua, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, NOW())',
+                'INSERT INTO ' . wm_t('comment') . ' (post_id, user_id, parent_id, nickname, email, content, status, ip, ip_hash, ua, bad_hit, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
                 [
                     (int) $comment['post_id'],
                     $userId,
@@ -64,13 +91,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     $nickname,
                     (string) $user['email'],
                     $content,
+                    $status,
                     wm_client_ip(),
                     wm_ip_hash(),
                     'user',
+                    mb_substr(implode(',', $hits), 0, 200),
                 ]
             );
             wm_post_resync((int) $comment['post_id']);
-            wm_flash(true, '回复已发布');
+            wm_flash(true, $status === 1 ? '回复已发布' : '回复已提交，等待审核');
         }
         wm_redirect('comments.php');
     }
@@ -87,12 +116,6 @@ $comments = wm_all(
      LIMIT 100',
     [$userId, $userId]
 );
-
-$statusLabels = [
-    0 => '待审核',
-    1 => '已通过',
-    2 => '已屏蔽',
-];
 
 user_head('收到的评论');
 user_flash();
@@ -129,7 +152,7 @@ user_flash();
                 </td>
                 <td class="comment-content"><?= e((string) $comment['content']) ?></td>
                 <td><?= e(wm_cut((string) $comment['post_content'], 24)) ?></td>
-                <td><?= e($statusLabels[(int) $comment['status']] ?? '未知') ?></td>
+                <td><?= e(wm_comment_status((int) $comment['status'])[0]) ?></td>
                 <td><?= e(date('m-d H:i', strtotime((string) $comment['created_at']))) ?></td>
                 <td class="comment-actions">
                     <?php if ((int) $comment['status'] === 0): ?>

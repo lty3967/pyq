@@ -1,8 +1,14 @@
 <?php
+/**
+ * 用户头像上传接口（返回 JSON）
+ *
+ * 头像只存 user.avatar 路径，不登记到 media 表；
+ * 后台「清理孤立文件」会额外采集 user 表的头像路径，避免被误判为孤立文件删除。
+ */
 declare(strict_types=1);
 
 require dirname(__DIR__) . '/includes/init.php';
-require WM_INC . '/upload.php';
+require_once WM_INC . '/upload.php';
 
 wm_require_post(true);
 $user = wm_require_user(true);

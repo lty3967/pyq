@@ -4,7 +4,7 @@
  */
 declare(strict_types=1);
 require __DIR__ . '/inc/layout.php';
-require WM_INC . '/mailer.php';
+require_once WM_INC . '/mailer.php';
 $admin = wm_require_admin();
 
 $traceOut = [];
@@ -45,9 +45,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             wm_setting_set('smtp_host', $host);
             wm_setting_set('smtp_port', (string)$port);
             wm_setting_set('smtp_user', $user);
-            // 密码留空表示保留原值
+            // 密码留空表示保留原值；非空则加密存储
             if ($pass !== '') {
-                wm_setting_set('smtp_pass', $pass);
+                wm_setting_set('smtp_pass', wm_secret_encode($pass));
             }
             wm_setting_set('smtp_secure', $secure);
             wm_setting_set('smtp_from', $from !== '' ? $from : $user);
@@ -145,8 +145,21 @@ function wm_mail_sanitize(string $html): string
     // 去除脚本、样式、iframe、事件属性与 javascript: 协议
     $html = preg_replace('#<\s*(script|style|iframe|object|embed|form|link|meta|base)\b[^>]*>.*?<\s*/\s*\1\s*>#is', '', $html) ?? $html;
     $html = preg_replace('#<\s*(script|style|iframe|object|embed|form|link|meta|base)\b[^>]*/?>#i', '', $html) ?? $html;
-    $html = preg_replace('#\son[a-z]+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)#i', '', $html) ?? $html;
-    $html = preg_replace('#(href|src)\s*=\s*("|\')\s*(javascript|vbscript|data)\s*:#i', '$1=$2#', $html) ?? $html;
+    // 事件属性：用 \b（词边界）而非 \s，可同时覆盖空白分隔 <img onerror> 与斜杠分隔 <img/onerror>
+    $html = preg_replace('#\bon[a-z]+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)#i', '', $html) ?? $html;
+    // 危险协议：先 html_entity_decode 再去掉空白与控制字符，最后匹配，
+    // 否则 "java\tscript:"、"java&#9;script:"、"javascript&colon;" 等实体变体可绕过
+    $html = preg_replace_callback(
+        '#(href|src)\s*=\s*(["\'])(.*?)\2#is',
+        static function ($m) {
+            $raw = $m[3];
+            $decoded = html_entity_decode($raw, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $compact = preg_replace('/[\x00-\x20]/', '', $decoded) ?? $decoded;
+            $val = preg_match('#^(javascript|vbscript|data)\s*:#i', $compact) ? '#' : $raw;
+            return $m[1] . '=' . $m[2] . $val . $m[2];
+        },
+        $html
+    ) ?? $html;
     return $html;
 }
 
@@ -154,11 +167,17 @@ $mails = wm_all('SELECT id, to_mail, subject, status, result, created_at FROM ' 
 $trace = $_SESSION['_mail_trace'] ?? [];
 unset($_SESSION['_mail_trace']);
 $smtpConfigured = (new WmMailer())->configured();
+// 密码已设置但无法解密（如 AUTH_SALT 变更），需重新填写，否则发信会静默失败
+$smtpPassBroken = (string)wm_setting('smtp_pass', '') !== ''
+    && wm_secret_decode((string)wm_setting('smtp_pass', '')) === '';
 
 wm_head('发信功能');
 ?>
 <?php if (!$smtpConfigured): ?>
   <div class="alert warn">SMTP 尚未配置完整，请先填写下方服务器信息后再发信。</div>
+<?php endif; ?>
+<?php if ($smtpPassBroken): ?>
+  <div class="alert err">SMTP 密码无法解密（可能是站点密钥已变更），请重新填写「密码 / 授权码」后再发信。</div>
 <?php endif; ?>
 
 <div class="grid2">

@@ -10,7 +10,7 @@ if (defined('WM_INIT')) {
 }
 define('WM_INIT', true);
 
-define('WM_VERSION', '1.0.8');
+define('WM_VERSION', '1.1.0');
 define('WM_ROOT', dirname(__DIR__));
 define('WM_INC', WM_ROOT . '/includes');
 define('WM_DATA', WM_ROOT . '/data');
@@ -87,7 +87,7 @@ function wm_base_url(): string
 require WM_INC . '/functions.php';
 require WM_INC . '/db.php';
 require WM_INC . '/security.php';
-require WM_INC . '/migrate.php';
 
-wm_migrate();
+// 表结构由安装向导一次性建全（install/sql.php），运行时不再执行任何迁移。
+// 旧版本站点升级请执行根目录的 upgrade.sql。
 wm_session_start();
