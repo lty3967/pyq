@@ -181,6 +181,47 @@ textarea.inp{resize:vertical;line-height:1.6;font-family:inherit}
 .up-btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .up-tip{color:#b0b3b8;font-size:12px;margin-top:8px}
 
+/* 分享音乐（发布页通用组件，后台与用户中心共用） */
+.music-box{border:1px solid #e4e7ed;border-radius:8px;padding:12px;background:#fafafa}
+.mb-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.mb-switch{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-weight:500;color:#303133}
+.mb-switch input{width:15px;height:15px;accent-color:#07c160}
+.mb-note{color:#b0b3b8;font-size:12px}
+.mb-body{margin-top:12px;padding-top:12px;border-top:1px dashed #e4e7ed}
+.mb-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.mb-select,.mb-input{border:1px solid #dcdfe6;border-radius:6px;padding:8px 11px;font-size:14px;font-family:inherit;outline:none;background:#fff;min-height:38px}
+.mb-select{flex:none;width:auto;min-width:118px}
+.mb-input{flex:1;min-width:180px}
+.mb-select:focus,.mb-input:focus{border-color:#07c160}
+.mb-btn{background:#07c160;color:#fff;border:0;border-radius:6px;padding:0 18px;height:38px;line-height:38px;cursor:pointer;font-size:14px;white-space:nowrap}
+.mb-btn:hover{background:#06ad56}
+.mb-btn:disabled{background:#9bdfba;cursor:not-allowed}
+.mb-btn.ghost{background:#fff;color:#606266;border:1px solid #dcdfe6}
+.mb-btn.ghost:hover{background:#f7f7f7;color:#303133}
+.mb-hint{color:#b0b3b8;font-size:12px;margin-top:7px;line-height:1.6}
+.mb-form{display:flex;gap:12px;margin-top:12px;padding-top:12px;border-top:1px dashed #e4e7ed;flex-wrap:wrap;align-items:flex-start}
+.mb-cover{position:relative;flex:none;width:78px;height:78px;border-radius:6px;overflow:hidden;background:#f0f2f5;border:1px solid #e4e7ed}
+.mb-cover img{width:100%;height:100%;object-fit:cover;display:block}
+.mb-cover-ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#c0c4cc;font-size:26px}
+.mb-fields{flex:1;min-width:260px;display:grid;gap:8px}
+.mb-field{font-size:12px;color:#909399}
+.mb-field .mb-input{display:block;width:100%;margin-top:4px;min-width:0}
+.wm-toast{position:fixed;left:50%;top:24px;transform:translateX(-50%);z-index:300;background:rgba(0,0,0,.82);color:#fff;font-size:14px;padding:10px 18px;border-radius:8px;max-width:88vw;text-align:center;line-height:1.5}
+.wm-toast.err{background:rgba(200,40,40,.9)}
+
+/* 表情选择器（与前台 style.css 保持同一套外观，用户中心回复框复用） */
+.emoji-panel{position:fixed;z-index:320;width:min(340px,94vw);background:#fff;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.18);padding:8px;box-sizing:border-box}
+.emoji-tabs{display:flex;gap:4px;border-bottom:1px solid #f0f0f0;padding-bottom:6px;margin-bottom:6px;flex-wrap:wrap}
+.emoji-tabs .emoji-tab{flex:1;min-width:52px;border:0;background:#f7f7f7;color:#576b95;font-size:12px;padding:5px 0;border-radius:5px;cursor:pointer}
+.emoji-tabs .emoji-tab.on{background:#07c160;color:#fff}
+.emoji-grid,.emoji-recent{display:grid;grid-template-columns:repeat(8,1fr);gap:2px;max-height:190px;overflow-y:auto}
+.emoji-recent{border-bottom:1px solid #f0f0f0;padding-bottom:6px;margin-bottom:6px;max-height:none}
+.emoji-recent .emoji-sub{grid-column:1/-1;font-size:11px;color:#b2b2b2;padding:2px 0 3px}
+.emoji-grid .emoji-cell,.emoji-recent .emoji-cell{border:0;background:none;font-size:21px;line-height:1;padding:5px 0;border-radius:6px;cursor:pointer}
+.emoji-grid .emoji-cell:hover,.emoji-recent .emoji-cell:hover{background:#f2f2f2}
+.emoji-tip{font-size:11px;color:#b2b2b2;text-align:center;padding-top:6px}
+.emoji-trigger{margin-bottom:15px}
+
 .pager{display:flex;gap:6px;justify-content:center;align-items:center;padding:16px 0 4px;flex-wrap:wrap;font-size:13px}
 .pager a,.pager .cur{min-width:32px;height:30px;line-height:30px;text-align:center;border-radius:5px;padding:0 9px;background:#fff;color:#606266;border:1px solid #e4e7ed}
 .pager a:hover{color:#07c160;border-color:#07c160;text-decoration:none}

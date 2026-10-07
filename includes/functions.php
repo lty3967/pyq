@@ -48,6 +48,12 @@ function ejs($data): string
 /** 统一 JSON 响应并终止 */
 function wm_json(bool $ok, string $msg = '', array $data = [], int $code = 200): void
 {
+    // JSON 接口里任何多余输出（PHP 告警、弃用提示、调试残留）都会让前端
+    // r.json() 直接抛错，只能显示「服务器响应异常」。这里先丢弃已产生的
+    // 输出缓冲，保证响应体是纯 JSON。
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
     if (!headers_sent()) {
         http_response_code($code);
         header('Content-Type: application/json; charset=utf-8');

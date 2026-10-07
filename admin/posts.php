@@ -43,29 +43,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                     wm_flash(true, '已取消置顶');
                     break;
                 case 'delete':
-                    $pdo = wm_db();
-                    $n = 0;
-                    try {
-                        $pdo->beginTransaction();
-                        $mediaRows = wm_all('SELECT path, thumb FROM ' . wm_t('media') . ' WHERE post_id IN (' . $in . ')', $ids);
-                        wm_exec('DELETE FROM ' . wm_t('media') . ' WHERE post_id IN (' . $in . ')', $ids);
-                        wm_exec('DELETE FROM ' . wm_t('comment') . ' WHERE post_id IN (' . $in . ')', $ids);
-                        wm_exec('DELETE FROM ' . wm_t('like') . ' WHERE post_id IN (' . $in . ')', $ids);
-                        wm_exec('DELETE FROM ' . wm_t('view') . ' WHERE post_id IN (' . $in . ')', $ids);
-                        $n = wm_exec('DELETE FROM ' . wm_t('post') . ' WHERE id IN (' . $in . ')', $ids);
-                        $pdo->commit();
-                        foreach ($mediaRows as $m) {
-                            wm_media_unlink((string)$m['path']);
-                            if ((string)$m['thumb'] !== '') { wm_media_unlink((string)$m['thumb']); }
-                        }
+                    $res = wm_post_delete($ids);
+                    if ($res['ok']) {
                         wm_log('删除动态', 'ID：' . implode(',', $ids));
-                        // 媒体文件已删除，让后台的磁盘占用统计立即重算
-                        wm_upload_usage_reset();
-                        wm_flash(true, '已删除 ' . $n . ' 条内容及其媒体、评论、点赞');
-                    } catch (Throwable $e) {
-                        if ($pdo->inTransaction()) { $pdo->rollBack(); }
-                        error_log('post delete fail: ' . $e->getMessage());
-                        wm_flash(false, '删除失败');
+                        wm_flash(true, $res['msg']);
+                    } else {
+                        wm_flash(false, $res['msg']);
                     }
                     break;
                 default:
@@ -152,6 +135,9 @@ wm_head('内容管理');
           <td><input type="checkbox" name="ids[]" value="<?= $pid ?>"></td>
           <td>
             <a href="post_edit.php?id=<?= $pid ?>"><?= e(wm_cut((string)$p['content'], 30) ?: '（无文字内容）') ?></a>
+            <?php if (!empty($p['music'])): ?>
+              <span class="st on" title="<?= e((string)$p['music']['song_name'] . ((string)$p['music']['artist'] !== '' ? ' - ' . $p['music']['artist'] : '')) ?>">♪ 音乐</span>
+            <?php endif; ?>
             <?php if ((int)$p['is_top'] === 1): ?><span class="st wait">置顶</span><?php endif; ?>
             <?php if ((int)$p['allow_comment'] !== 1): ?><span class="st off">已关评论</span><?php endif; ?>
           </td>
@@ -174,8 +160,17 @@ wm_head('内容管理');
                 <?php endif; ?>
               <?php endforeach; ?>
               <?php if (count($ms) > 3): ?><span class="hint">+<?= count($ms) - 3 ?></span><?php endif; ?>
-              <?php if (!$ms): ?><span class="hint">—</span><?php endif; ?>
+              <?php if (!$ms && empty($p['music'])): ?><span class="hint">—</span><?php endif; ?>
             </div>
+            <?php if (!empty($p['music'])): ?>
+              <div class="thumbs" style="margin-top:6px" title="<?= e((string)$p['music']['song_name']) ?>">
+                <?php if ((string) $p['music']['cover'] !== ''): ?>
+                  <img src="<?= e((string) $p['music']['cover']) ?>" alt="" loading="lazy" referrerpolicy="no-referrer">
+                <?php else: ?>
+                  <span class="vtag">音乐</span>
+                <?php endif; ?>
+              </div>
+            <?php endif; ?>
           </td>
           <td><?= $p['cat_name'] !== null ? e((string)$p['cat_name']) : '<span class="hint">未分类</span>' ?></td>
           <td><?= (int)$p['views'] ?></td>

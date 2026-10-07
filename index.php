@@ -4,7 +4,7 @@
  */
 declare(strict_types=1);
 require __DIR__ . '/includes/init.php';
-require WM_INC . '/model.php';
+require_once WM_INC . '/model.php';
 
 $catId = wm_input_int('cat', 'GET', 0);
 $page = max(1, wm_input_int('page', 'GET', 1));
@@ -48,6 +48,45 @@ function wm_avatar_html(string $name, string $avatar, string $cls = 'avatar'): s
     $idx = abs(crc32($name)) % count($colors);
     return '<span class="' . e($cls) . ' ph" style="background:' . $colors[$idx] . '">' . e($ch) . '</span>';
 }
+
+/**
+ * 分享音乐卡片（样式对齐微信朋友圈「分享音乐」）
+ * 封面 + 歌名 + 歌手；能拿到直链音频时额外显示播放按钮。
+ */
+function wm_music_card_html(?array $m): string
+{
+    if ($m === null || $m === []) { return ''; }
+    $url = (string)($m['url'] ?? '');
+    $name = (string)($m['song_name'] ?? '');
+    $artist = (string)($m['artist'] ?? '');
+    $cover = (string)($m['cover'] ?? '');
+    $audio = (string)($m['audio'] ?? '');
+
+    $coverHtml = $cover !== ''
+        ? '<img src="' . e($cover) . '" alt="" loading="lazy">'
+        : '<span class="mc-ph" aria-hidden="true">♪</span>';
+
+    $info = '<div class="mc-name">' . e($name) . '</div>'
+        . '<div class="mc-artist">' . e($artist !== '' ? $artist : '未知歌手') . '</div>';
+
+    $title = $artist !== '' ? $name . ' - ' . $artist : $name;
+    $playBtn = $audio !== ''
+        ? '<button class="mc-play" type="button" data-audio="' . e($audio) . '"'
+            . ' data-name="' . e($title) . '" data-artist="' . e($artist) . '"'
+            . ' data-cover="' . e($cover) . '" aria-label="播放 ' . e($title) . '">'
+            . '<span class="mp-ico">▶</span></button>'
+        : '';
+
+    $coverBlock = $url !== ''
+        ? '<a class="mc-cover" href="' . e($url) . '" target="_blank" rel="nofollow noopener noreferrer">'
+            . $coverHtml . '<span class="mc-note">♪</span></a>'
+        : '<span class="mc-cover">' . $coverHtml . '<span class="mc-note">♪</span></span>';
+    $infoBlock = $url !== ''
+        ? '<a class="mc-info" href="' . e($url) . '" target="_blank" rel="nofollow noopener noreferrer">' . $info . '</a>'
+        : '<span class="mc-info">' . $info . '</span>';
+
+    return '<div class="music-card">' . $coverBlock . $infoBlock . $playBtn . '</div>';
+}
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -71,7 +110,6 @@ function wm_avatar_html(string $name, string $avatar, string $cls = 'avatar'): s
       <div class="cover-img cover-default"></div>
     <?php endif; ?>
     <div class="cover-mask"></div>
-    <a class="cover-back" href="<?= e($base) ?>" aria-label="返回首页">‹</a>
     <a class="cover-user" href="<?= $currentUser !== null ? 'user/profile.php' : 'user/login.php' ?>" aria-label="<?= $currentUser !== null ? '打开个人资料' : '登录账号' ?>">
       <div class="cu-text">
         <div class="cu-name"><?= e($ownerName) ?></div>
@@ -139,6 +177,8 @@ function wm_avatar_html(string $name, string $avatar, string $cls = 'avatar'): s
           </div>
         <?php endforeach; ?>
 
+        <?= wm_music_card_html($p['music'] ?? null) ?>
+
         <?php if (!empty($p['location'])): ?>
           <div class="loc">📍 <?= e((string)$p['location']) ?></div>
         <?php endif; ?>
@@ -204,10 +244,26 @@ function wm_avatar_html(string $name, string $avatar, string $cls = 'avatar'): s
     </div>
     <div class="cb-row">
       <textarea class="cb-text" name="content" placeholder="评论…" maxlength="500" rows="2" required></textarea>
+      <button class="cb-emoji" type="button" id="cmtEmoji" aria-label="表情">😊</button>
       <button class="cb-send" type="submit">发送</button>
     </div>
     <div class="cb-tip" id="cbTip"><?= $needAudit ? '评论需审核后显示' : '' ?></div>
   </form>
+</div>
+
+<!-- 音乐播放条（转发到微信朋友圈的样式） -->
+<div class="music-player" id="musicPlayer" hidden>
+  <div class="mp-inner">
+    <span class="mp-disc" id="mpDisc"><img id="mpCover" src="" alt=""></span>
+    <div class="mp-text">
+      <div class="mp-name" id="mpName"></div>
+      <div class="mp-artist" id="mpArtist"></div>
+    </div>
+    <button class="mp-btn" id="mpToggle" type="button" aria-label="播放 / 暂停"><span id="mpIco">▶</span></button>
+    <button class="mp-close" id="mpClose" type="button" aria-label="关闭播放器">×</button>
+  </div>
+  <div class="mp-progress"><span id="mpBar"></span></div>
+  <audio id="mpAudio" preload="none"></audio>
 </div>
 
 <!-- 图片查看器 -->
@@ -220,6 +276,7 @@ function wm_avatar_html(string $name, string $avatar, string $cls = 'avatar'): s
 <div class="toast" id="toast" hidden></div>
 
 <script>window.WM = <?= ejs(['base' => $base, 'token' => wm_csrf_token(), 'needAudit' => $needAudit]) ?>;</script>
+<script src="assets/js/emoji.js?v=<?= e(WM_ASSET_VER) ?>"></script>
 <script src="assets/js/app.js?v=<?= e(WM_ASSET_VER) ?>"></script>
 </body>
 </html>

@@ -5,6 +5,7 @@
 declare(strict_types=1);
 if (!defined('WM_INIT')) { exit('403'); }
 require_once WM_INC . '/upload.php';
+require_once WM_INC . '/music.php';
 
 /** 已发布动态列表 */
 function wm_post_list(int $page, int $size, int $catId = 0, bool $adminView = false, array $opt = []): array
@@ -65,12 +66,16 @@ function wm_post_list(int $page, int $size, int $catId = 0, bool $adminView = fa
     $media = wm_media_by_posts($ids);
     $comments = $adminView ? [] : wm_comments_by_posts($ids);
     $mine = wm_my_likes($ids);
+    // 分享音乐：按 music_id 批量挂载。未执行 upgrade.sql 时该列不存在，
+    // array_column 取不到值即返回空数组，wm_music_by_posts 也会自行降级。
+    $music = wm_music_by_posts(array_column($rows, 'music_id'));
 
     foreach ($rows as &$r) {
         $pid = (int)$r['id'];
         $r['media'] = $media[$pid] ?? [];
         $r['comment_list'] = $comments[$pid] ?? [];
         $r['liked'] = in_array($pid, $mine, true);
+        $r['music'] = $music[(int)($r['music_id'] ?? 0)] ?? null;
     }
     unset($r);
 
@@ -175,6 +180,7 @@ function wm_post_get(int $id, bool $adminView = false): ?array
     $row = wm_one($sql, [$id]);
     if ($row === null) { return null; }
     $row['media'] = wm_all('SELECT * FROM ' . wm_t('media') . ' WHERE post_id = ? ORDER BY sort, id', [$id]);
+    $row['music'] = wm_music_get((int)($row['music_id'] ?? 0));
     return $row;
 }
 
@@ -216,6 +222,44 @@ function wm_post_resync(int $postId): void
              p.comments = (SELECT COUNT(*) FROM ' . wm_t('comment') . ' c WHERE c.post_id = p.id AND c.status = 1),
              p.likes = (SELECT COUNT(*) FROM ' . wm_t('like') . ' l WHERE l.post_id = p.id)
              WHERE p.id = ?', [$postId]);
+}
+
+/**
+ * 删除动态及其全部关联数据（后台批量删除、用户中心删除共用）
+ * 物理文件在事务提交成功后再删，避免回滚造成「记录还在、文件已丢」。
+ * @return array{ok:bool,msg:string,deleted:int}
+ */
+function wm_post_delete(array $ids): array
+{
+    $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn($v) => $v > 0)));
+    $ids = array_slice($ids, 0, 200);
+    if (!$ids) {
+        return ['ok' => false, 'msg' => '未选择任何内容', 'deleted' => 0];
+    }
+    $in = implode(',', array_fill(0, count($ids), '?'));
+    $db = wm_db();
+    $mediaRows = [];
+    try {
+        $db->beginTransaction();
+        $mediaRows = wm_all('SELECT path, thumb FROM ' . wm_t('media') . ' WHERE post_id IN (' . $in . ')', $ids);
+        wm_exec('DELETE FROM ' . wm_t('media') . ' WHERE post_id IN (' . $in . ')', $ids);
+        wm_exec('DELETE FROM ' . wm_t('comment') . ' WHERE post_id IN (' . $in . ')', $ids);
+        wm_exec('DELETE FROM ' . wm_t('like') . ' WHERE post_id IN (' . $in . ')', $ids);
+        wm_exec('DELETE FROM ' . wm_t('view') . ' WHERE post_id IN (' . $in . ')', $ids);
+        $n = wm_exec('DELETE FROM ' . wm_t('post') . ' WHERE id IN (' . $in . ')', $ids);
+        $db->commit();
+
+        foreach ($mediaRows as $m) {
+            wm_media_unlink((string) $m['path']);
+            if ((string) $m['thumb'] !== '') { wm_media_unlink((string) $m['thumb']); }
+        }
+        wm_upload_usage_reset();
+        return ['ok' => true, 'msg' => '已删除 ' . $n . ' 条内容及其媒体、评论、点赞', 'deleted' => $n];
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) { $db->rollBack(); }
+        error_log('post delete fail: ' . $e->getMessage());
+        return ['ok' => false, 'msg' => '删除失败，请稍后重试', 'deleted' => 0];
+    }
 }
 
 /**

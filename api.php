@@ -1,10 +1,16 @@
 <?php
 /**
- * 前台 API：点赞、评论、浏览上报
+ * 前台 API：点赞、评论、浏览上报、音乐信息获取
  */
 declare(strict_types=1);
 require __DIR__ . '/includes/init.php';
 require WM_INC . '/model.php';
+// 必须用 require_once：model.php 里已经 require_once 过 music.php，
+// 这里再用普通 require 会把文件再执行一遍，触发
+// "Cannot redeclare wm_music_platforms()" 致命错误。
+// 致命错误在生产环境（display_errors=Off）不输出任何内容，
+// 前端 JSON.parse 失败只能提示「服务器响应异常」，且点赞/评论/浏览全部失效。
+require_once WM_INC . '/music.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -15,10 +21,6 @@ wm_csrf_check(true);
 $act = wm_input('act');
 $postId = wm_input_int('post_id');
 
-if ($postId <= 0) {
-    wm_json(false, '参数错误', [], 400);
-}
-
 // IP 黑名单
 if ($act !== 'view') {
     $blocked = wm_blocked_ips();
@@ -26,6 +28,25 @@ if ($act !== 'view') {
         wm_json(false, '当前网络环境已被限制互动', [], 403);
     }
 }
+
+// ---------------- 音乐信息获取（与动态无关，单独提前处理） ----------------
+if ($act === 'music') {
+    if (!wm_rate_limit('music_fetch', 30, 600)) {
+        wm_json(false, '获取过于频繁，请稍后再试', [], 429);
+    }
+    $platform = wm_input('platform');
+    $input = wm_input('input');
+    $res = wm_music_fetch($platform, $input);
+    if (!$res['ok']) {
+        wm_json(false, $res['msg'], [], 200);
+    }
+    wm_json(true, '获取成功', $res['data']);
+}
+
+if ($postId <= 0) {
+    wm_json(false, '参数错误', [], 400);
+}
+
 $post = wm_one('SELECT id, status, allow_comment, likes, comments FROM ' . wm_t('post') . ' WHERE id = ? LIMIT 1', [$postId]);
 $currentUser = wm_user();
 $currentUserId = $currentUser !== null ? (int)$currentUser['id'] : 0;
@@ -52,6 +73,9 @@ switch ($act) {
                       ORDER BY id LIMIT 1', [$postId, $currentUserId, $ipHash])
             : wm_one('SELECT id FROM ' . wm_t('like') . '
                       WHERE post_id = ? AND ip_hash = ? AND user_id = 0 LIMIT 1', [$postId, $ipHash]);
+        // 预置初值：catch 分支里 wm_json 会 exit，但静态分析识别不到，
+        // 没有初值会一直报「可能未定义变量」
+        $liked = false;
         if ($exists !== null) {
             wm_exec('DELETE FROM ' . wm_t('like') . ' WHERE id = ?', [(int)$exists['id']]);
             $liked = false;

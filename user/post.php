@@ -46,9 +46,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $status = wm_input_int('status') === 1 ? 1 : 0;
     $allowComment = wm_input_int('allow_comment') === 1 ? 1 : 0;
 
-    if ($content === '' && !$media) {
-        $error = '请填写文字或上传媒体';
-    } elseif (mb_strlen($content) > 5000 || mb_strlen($location) > 50) {
+    // 「内容是否为空」的判定放到解析完媒体与音乐之后（可能只发一首歌）
+    if (mb_strlen($content) > 5000 || mb_strlen($location) > 50) {
         $error = '内容或位置超出长度限制';
     } elseif ($categoryId > 0 && wm_value(
         'SELECT id FROM ' . wm_t('category') . ' WHERE id = ? AND status = 1',
@@ -106,21 +105,63 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     // 视频与图片不混排，视频仅 1 个（与后台共用同一规则）
     $selectedMedia = wm_media_pick($selectedMedia, 9);
 
-    if ($content === '' && !$selectedMedia) {
-        $error = '请填写文字或上传媒体';
+    // 分享音乐：与图文/视频互斥，选中音乐时清空媒体
+    $musicReady = wm_music_ready();
+    $musicId = 0;
+    $musicRow = null;
+    $musicRaw = json_decode((string)($_POST['music_data'] ?? ''), true);
+    if (is_array($musicRaw) && trim((string)($musicRaw['song_name'] ?? '')) !== '') {
+        if (!$musicReady) {
+            if ($error === '') {
+                $error = '数据库结构未升级，无法保存音乐，请先执行站点根目录的 upgrade.sql';
+            }
+        } else {
+            // song_id 缺失（手工填写）时 wm_music_pack 会用「平台+歌名+歌手」
+            // 派生一个稳定的伪 ID，重复分享同一首歌自动复用同一条记录
+            $musicRow = wm_music_pack($musicRaw);
+            if ($musicRow['song_name'] === '') {
+                $error = '请填写歌曲名';
+            }
+        }
+    }
+    if ($musicRow !== null) {
+        $selectedMedia = [];
+    }
+
+    if ($error === '' && $content === '' && !$selectedMedia && $musicRow === null) {
+        $error = '请填写文字、上传媒体或分享一首歌';
     }
 
     if ($error === '') {
         $mediaType = 'none';
-        if ($selectedMedia) {
+        if ($musicRow !== null) {
+            $mediaType = 'music';
+            $musicId = wm_music_save($musicRow, $userId);
+            if ($musicId <= 0) { $error = '音乐信息保存失败，请重试'; }
+        } elseif ($selectedMedia) {
             $mediaType = $selectedMedia[0]['type'] === 'video' ? 'video' : 'image';
         }
+    }
 
+    if ($error === '') {
         $db = wm_db();
         $removedMedia = [];
 
         try {
             $db->beginTransaction();
+
+            // 列名与占位符全部由数组生成：早先用字符串拼接 + 条件片段拼 SQL，
+            // 漏掉一个逗号就是整条语句 1064，而错误日志里看不到真实语句，
+            // 极难定位。改成拼装后结构上不可能再少逗号。
+            $setCols = [
+                'cat_id' => '?', 'content' => '?', 'media_type' => '?', 'location' => '?',
+                'status' => '?', 'allow_comment' => '?',
+            ];
+            $setVals = [$categoryId, $content, $mediaType, $location, $status, $allowComment];
+            if ($musicReady) {
+                $setCols['music_id'] = '?';
+                $setVals[] = $musicId;
+            }
 
             if ($id > 0) {
                 $oldMedia = wm_all(
@@ -134,10 +175,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 );
 
                 wm_exec(
-                    'UPDATE ' . wm_t('post') . '
-                     SET cat_id = ?, content = ?, media_type = ?, location = ?, status = ?, allow_comment = ?
-                     WHERE id = ? AND user_id = ?',
-                    [$categoryId, $content, $mediaType, $location, $status, $allowComment, $id, $userId]
+                    wm_build_update(wm_t('post'), $setCols) . ' WHERE id = ? AND user_id = ?',
+                    array_merge($setVals, [$id, $userId])
                 );
 
                 $postId = $id;
@@ -157,12 +196,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     );
                 }
             } else {
-                wm_exec(
-                    'INSERT INTO ' . wm_t('post') . '
-                     (user_id, cat_id, content, media_type, location, status, allow_comment, created_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, NOW())',
-                    [$userId, $categoryId, $content, $mediaType, $location, $status, $allowComment]
-                );
+                $insCols = ['user_id', 'cat_id', 'content', 'media_type', 'location',
+                    'status', 'allow_comment', 'created_at'];
+                $insRaw = ['created_at' => 'NOW()'];
+                $insVals = [$userId, $categoryId, $content, $mediaType, $location, $status, $allowComment];
+                if ($musicReady) {
+                    $insCols[] = 'music_id';
+                    $insVals[] = $musicId;
+                }
+                wm_exec(wm_build_insert(wm_t('post'), $insCols, $insRaw), $insVals);
 
                 $postId = wm_insert_id();
             }
@@ -196,7 +238,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             if ($db->inTransaction()) {
                 $db->rollBack();
             }
-            error_log('user post save fail: ' . $exception->getMessage());
+            error_log('user post save fail: ' . $exception->getMessage() . ' | SQL: ' . wm_last_sql());
             $error = '保存失败，请稍后重试';
         }
     }
@@ -219,6 +261,14 @@ $mediaData = array_map(
     ],
     $shownMedia
 );
+// 编辑 / 校验失败回填时把原有音乐带回去
+$musicInit = null;
+if ($id > 0 && !empty($post['music'])) {
+    $musicInit = $post['music'];
+} elseif (is_array($musicRow ?? null)) {
+    $musicInit = $musicRow;
+}
+$musicReady = wm_music_ready();
 
 user_head($id > 0 ? '编辑动态' : '发布动态');
 user_flash();
@@ -248,6 +298,14 @@ user_flash();
                 <input id="userImg" type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden>
                 <input id="userVid" type="file" accept="video/mp4,video/webm" hidden>
             </div>
+        </label>
+
+        <label>
+            分享音乐
+            <div id="musicMount"></div>
+            <?php if (!$musicReady): ?>
+                <p class="muted" style="margin-top:8px;color:#c98b1b">数据库结构未升级，暂不能分享音乐，请联系管理员执行站点根目录的 upgrade.sql。</p>
+            <?php endif; ?>
         </label>
 
         <label>
@@ -284,6 +342,20 @@ user_flash();
 
 <script>
     window.WM_USER = <?= ejs(['token' => wm_csrf_token()]) ?>;
+</script>
+<script src="../assets/js/music.js?v=<?= e(WM_ASSET_VER) ?>"></script>
+<script>
+    // 等 DOMContentLoaded 再挂载，确保 user.js 已经注册好 WmUploader（清空媒体用）
+    document.addEventListener('DOMContentLoaded', function () {
+        if (!window.WmMusic) { return; }
+        window.WM_MUSIC_INIT = <?= ejs($musicInit) ?>;
+        window.WmMusic.mount({
+            mount: '#musicMount',
+            api: '../api.php',
+            mediaBox: '#userUploader',
+            platforms: <?= ejs(wm_music_platforms()) ?>
+        });
+    });
 </script>
 <script src="../assets/js/user.js?v=<?= e(WM_ASSET_VER) ?>"></script>
 <?php user_foot();

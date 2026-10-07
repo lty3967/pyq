@@ -55,6 +55,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         wm_redirect('comments.php');
     }
 
+    if ($action === 'delete') {
+        // 连同所有层级的子回复一并删除，避免多级回复残留成孤儿数据
+        $delIds = wm_comment_descendants([$commentId]);
+        $n = wm_exec('DELETE FROM ' . wm_t('comment') . ' WHERE id IN ('
+            . implode(',', array_fill(0, count($delIds), '?')) . ')', $delIds);
+        wm_post_resync((int) $comment['post_id']);
+        wm_flash(true, '已删除该评论' . ($n > 1 ? '及其 ' . ($n - 1) . ' 条回复' : ''));
+        wm_redirect('comments.php');
+    }
+
     if ($action === 'reply') {
         $content = wm_input('content');
         $interval = max(0, (int) wm_setting('comment_interval', '30'));
@@ -152,12 +162,18 @@ user_flash();
                 </td>
                 <td class="comment-content"><?= e((string) $comment['content']) ?></td>
                 <td><?= e(wm_cut((string) $comment['post_content'], 24)) ?></td>
-                <td><?= e(wm_comment_status((int) $comment['status'])[0]) ?></td>
+                <td class="status-cell">
+                    <?php
+                    // 与后台评论管理一致：彩色标签 + 统一的状态文案/样式
+                    $st = wm_comment_status((int) $comment['status']);
+                    ?>
+                    <span class="st <?= e($st[1]) ?>"><?= e($st[0]) ?></span>
+                </td>
                 <td><?= e(date('m-d H:i', strtotime((string) $comment['created_at']))) ?></td>
                 <td class="comment-actions">
                     <?php if ((int) $comment['status'] === 0): ?>
                         <details class="review-menu">
-                            <summary class="secondary">审核</summary>
+                            <summary class="btn sm ghost">审核</summary>
                             <div class="review-options">
                                 <form method="post">
                                     <?= wm_csrf_field() ?>
@@ -175,10 +191,25 @@ user_flash();
                                 </form>
                             </div>
                         </details>
-                    <?php else: ?>
-                        <span class="status-text">已处理</span>
                     <?php endif; ?>
-                    <a class="secondary" href="comments.php?reply_id=<?= (int) $comment['id'] ?>">回复</a>
+                    <a class="btn sm ghost" href="comments.php?reply_id=<?= (int) $comment['id'] ?>">回复</a>
+                    <?php if ((int) $comment['status'] !== 0): ?>
+                        <?php /* 待审时「不通过」已经覆盖了屏蔽，不再重复出一个同义按钮 */ ?>
+                        <form method="post" class="inline-form">
+                            <?= wm_csrf_field() ?>
+                            <input type="hidden" name="act" value="moderate">
+                            <input type="hidden" name="id" value="<?= (int) $comment['id'] ?>">
+                            <input type="hidden" name="status" value="<?= (int) $comment['status'] === 2 ? 1 : 2 ?>">
+                            <button class="btn sm ghost" type="submit"><?= (int) $comment['status'] === 2 ? '恢复' : '屏蔽' ?></button>
+                        </form>
+                    <?php endif; ?>
+                    <form method="post" class="inline-form"
+                          data-confirm="删除后不可恢复，该评论下的所有回复也会一并删除，确定删除？">
+                        <?= wm_csrf_field() ?>
+                        <input type="hidden" name="act" value="delete">
+                        <input type="hidden" name="id" value="<?= (int) $comment['id'] ?>">
+                        <button class="btn sm danger" type="submit">删除</button>
+                    </form>
                 </td>
             </tr>
         <?php endforeach; ?>
@@ -201,10 +232,19 @@ user_flash();
             <input type="hidden" name="id" value="<?= (int) $replyTarget['id'] ?>">
             <label>
                 回复内容
-                <textarea name="content" rows="4" maxlength="500" required placeholder="请输入回复内容"></textarea>
+                <textarea name="content" id="replyText" rows="4" maxlength="500" required placeholder="请输入回复内容，可点右侧按钮插入表情"></textarea>
             </label>
+            <button type="button" class="secondary emoji-trigger" id="replyEmoji" aria-label="表情">😊 表情</button>
             <button class="primary" type="submit">发布回复</button>
         </form>
     </section>
 <?php endif; ?>
+<script src="../assets/js/emoji.js?v=<?= e(WM_ASSET_VER) ?>"></script>
+<script>
+    (function () {
+        var ta = document.getElementById('replyText');
+        var btn = document.getElementById('replyEmoji');
+        if (ta && btn && window.WmEmoji) { window.WmEmoji.attach(ta, btn); }
+    }());
+</script>
 <?php user_foot();

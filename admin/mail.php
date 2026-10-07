@@ -54,6 +54,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             wm_setting_set('smtp_from_name', $fromName);
             wm_setting_set('notify_email', $notify);
             wm_setting_set('notify_on_comment', wm_input_int('notify_on_comment') === 1 ? '1' : '0');
+            wm_setting_set('notify_on_update', wm_input_int('notify_on_update') === 1 ? '1' : '0');
             wm_log('保存 SMTP 配置', $host . ':' . $port);
             wm_flash(true, 'SMTP 配置已保存');
         }
@@ -214,6 +215,8 @@ wm_head('发信功能');
       <div class="fr"><label for="ne">通知接收邮箱</label><div class="fc">
         <input class="inp" type="email" id="ne" name="notify_email" maxlength="120" value="<?= e((string)wm_setting('notify_email', '')) ?>">
         <label class="ck" style="margin-top:8px"><input type="checkbox" name="notify_on_comment" value="1" <?= (string)wm_setting('notify_on_comment', '0') === '1' ? 'checked' : '' ?>> 有新评论时邮件通知我</label>
+        <label class="ck" style="margin-top:4px"><input type="checkbox" name="notify_on_update" value="1" <?= (string)wm_setting('notify_on_update', '1') === '1' ? 'checked' : '' ?>> 检测到新版本时邮件通知我（同一版本只发一次）</label>
+        <div class="fh">留空则使用当前管理员账号邮箱；需先在上方配置好 SMTP 才能发出。</div>
       </div></div>
       <div class="fr"><label></label><div class="fc acts"><button class="btn" type="submit">保存配置</button></div></div>
     </form>

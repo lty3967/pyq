@@ -4,7 +4,7 @@
  */
 declare(strict_types=1);
 require dirname(__DIR__, 2) . '/includes/init.php';
-require WM_INC . '/model.php';
+require_once WM_INC . '/model.php';
 
 // 后台禁止被搜索引擎索引 / 禁止缓存
 if (!headers_sent()) {

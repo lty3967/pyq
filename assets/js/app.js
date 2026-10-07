@@ -118,7 +118,15 @@
   function closeCmt() {
     if (bar) { bar.hidden = true; }
     if (form) { form.content.value = ''; form.parent_id.value = 0; }
+    if (window.WmEmoji) { window.WmEmoji.close(); }
   }
+
+  /* 表情选择器：把光标停在插入的表情之后，方便连续输入 */
+  (function initEmoji() {
+    var btn = $('#cmtEmoji');
+    if (!btn || !form || !window.WmEmoji) { return; }
+    window.WmEmoji.attach(form.content, btn);
+  }());
 
   if (form) {
     form.addEventListener('submit', function (ev) {
@@ -181,9 +189,17 @@
 
   document.addEventListener('click', function (ev) {
     if (!bar || bar.hidden) { return; }
-    if (ev.target.closest('#cmtBar')) { return; }
-    if (ev.target.closest('[data-act="comment"]')) { return; }
-    if (ev.target.closest('.cmt .who[data-reply]')) { return; }
+    var t = ev.target;
+    if (!t || !t.closest) { return; }
+    if (t.closest('#cmtBar')) { return; }
+    // 表情面板挂在 body 上，不属于评论框内部，点了不能把评论框收起来。
+    // 用 contains 而不只是 closest()：面板重绘时节点可能已脱离文档，
+    // closest() 会返回 null 而被误判成外部点击。
+    var emojiPanel = document.querySelector('.emoji-panel');
+    if ((emojiPanel && emojiPanel.contains(t)) || t.closest('.emoji-panel')) { return; }
+    if (t.closest('[data-emoji-trigger]')) { return; }
+    if (t.closest('[data-act="comment"]')) { return; }
+    if (t.closest('.cmt .who[data-reply]')) { return; }
     closeCmt();
   });
 
@@ -256,4 +272,110 @@
     }, { threshold: 0.5 });
     $$('.item').forEach(function (el) { io.observe(el); });
   }
+
+  /* ---------------- 分享音乐卡片 + 底部播放条 ---------------- */
+  (function musicPlayer() {
+    var player = $('#musicPlayer');
+    var audio = $('#mpAudio');
+    if (!player || !audio) { return; }
+
+    var mpCover = $('#mpCover'), mpName = $('#mpName'), mpArtist = $('#mpArtist');
+    var mpDisc = $('#mpDisc'), mpToggle = $('#mpToggle'), mpIco = $('#mpIco');
+    var mpClose = $('#mpClose'), mpBar = $('#mpBar');
+    var currentSrc = '';
+
+    // 封面加载失败时降级为音符占位，避免出现破图
+    $$('.music-card .mc-cover img').forEach(function (im) {
+      im.addEventListener('error', function () { im.style.display = 'none'; });
+    });
+
+    function setIco(playing) {
+      if (mpIco) { mpIco.textContent = playing ? '❚❚' : '▶'; }
+      if (mpDisc) { mpDisc.classList.toggle('spin', playing); }
+    }
+
+    function show(data) {
+      if (mpName) { mpName.textContent = data.name || ''; }
+      if (mpArtist) { mpArtist.textContent = data.artist || ''; }
+      if (mpCover) {
+        if (data.cover) {
+          mpCover.src = data.cover;
+          mpCover.style.display = '';
+        } else {
+          mpCover.removeAttribute('src');
+          mpCover.style.display = 'none';
+        }
+      }
+      player.hidden = false;
+    }
+
+    function play(d) {
+      if (!d || !d.audio) { return; }
+      if (currentSrc !== d.audio) {
+        currentSrc = d.audio;
+        audio.src = d.audio;
+      }
+      show(d);
+      var p = audio.play();
+      // 浏览器会拦截未经过用户手势的自动播放，这里只做静默降级
+      if (p && typeof p.catch === 'function') {
+        p.catch(function () { setIco(false); toast('浏览器阻止了自动播放，请再点一次播放'); });
+      }
+      setIco(true);
+    }
+
+    document.addEventListener('click', function (ev) {
+      var btn = ev.target.closest('.mc-play');
+      if (!btn) { return; }
+      ev.preventDefault();
+      ev.stopPropagation();
+      var audio2 = btn.getAttribute('data-audio') || '';
+      if (currentSrc === audio2 && !audio.paused) {
+        audio.pause();
+        setIco(false);
+        return;
+      }
+      play({
+        audio: audio2,
+        name: btn.getAttribute('data-name') || '',
+        artist: btn.getAttribute('data-artist') || '',
+        cover: btn.getAttribute('data-cover') || ''
+      });
+    });
+
+    if (mpToggle) {
+      mpToggle.addEventListener('click', function () {
+        if (audio.paused) {
+          var p = audio.play();
+          if (p && typeof p.catch === 'function') { p.catch(function () { toast('播放失败，请检查音频地址是否可用'); }); }
+          setIco(true);
+        } else {
+          audio.pause();
+          setIco(false);
+        }
+      });
+    }
+
+    if (mpClose) {
+      mpClose.addEventListener('click', function () {
+        audio.pause();
+        audio.removeAttribute('src');
+        currentSrc = '';
+        player.hidden = true;
+        setIco(false);
+      });
+    }
+
+    audio.addEventListener('play', function () { setIco(true); });
+    audio.addEventListener('pause', function () { setIco(false); });
+    audio.addEventListener('ended', function () { setIco(false); });
+    audio.addEventListener('error', function () {
+      setIco(false);
+      toast('音频加载失败，可点击卡片前往音乐平台收听');
+    });
+    audio.addEventListener('timeupdate', function () {
+      if (!mpBar || !audio.duration) { return; }
+      mpBar.style.width = ((audio.currentTime / audio.duration) * 100).toFixed(2) + '%';
+    });
+  }());
 })();

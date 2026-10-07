@@ -1,57 +1,53 @@
--- ============================================================
--- 朋友圈系统 - 旧版本升级脚本
--- ------------------------------------------------------------
--- 适用对象：在本项目改为「安装时一次性建全表结构」之前就已安装完成的站点。
--- 全新安装不需要执行本文件 —— 安装向导（install/sql.php）已建好完整结构。
+-- ============================================================================
+-- 朋友圈系统 升级脚本 (1.1.2 -> 1.2.0)
 --
--- 使用方法（三选一）：
---   1. 宝塔面板 / phpMyAdmin：导入本文件
---   2. 命令行：mysql -u 用户名 -p 数据库名 < upgrade.sql
---   3. 复制内容到 SQL 窗口手动逐条执行
+-- 本次新增：分享音乐
+--   1) 新表 wm_music           歌曲元信息，多条动态可复用同一条
+--   2) wm_post 新增字段        music_id，0 表示该动态未分享音乐
+--   3) 新增设置项              notify_on_update，检测到新版本时邮件通知站长
 --
--- 注意事项：
---   - 执行前请务必备份数据库
---   - 先把文件中所有的 `wm_` 替换成你安装时填写的「表前缀」
---   - 若某条提示 "Duplicate key name" / "column already exists"，
---     说明该项已存在，跳过该条继续即可，不影响其它语句
--- ============================================================
-
-
--- ---------- 1. 补齐 user_id 相关索引 ----------
--- 用途：用户中心「我的动态」、后台按用户筛选、删除用户等场景，
---       原先没有索引，数据量上来后会全表扫描。
-
-ALTER TABLE `wm_post`    ADD INDEX `idx_user` (`user_id`, `id`);
-ALTER TABLE `wm_comment` ADD INDEX `idx_user` (`user_id`, `id`);
-ALTER TABLE `wm_like`    ADD INDEX `idx_user` (`user_id`);
-ALTER TABLE `wm_media`   ADD INDEX `idx_user` (`user_id`, `id`);
-
--- 用途：后台「清理孤立文件」按 post_id + created_at 扫描未关联的媒体
-ALTER TABLE `wm_media`   ADD INDEX `idx_orphan` (`post_id`, `created_at`);
-
-
--- ---------- 2. 点赞去重键升级 ----------
--- 旧结构 uk_post_ip(post_id, ip_hash) 只认 IP，会带来两个问题：
---   a) 同一出口 NAT（公司 / 校园 / 移动网络）下只有一个人能点赞；
---   b) 登录用户换 IP 后可以重复点赞。
--- 改为生成列 owner_key：user_id > 0 时取 'u'+账号，否则取 'i'+IP，
--- 再对 (post_id, owner_key) 建唯一键，实现「登录按账号、匿名按 IP」。
+-- 执行方式（任选其一）
+--   A. phpMyAdmin / Navicat 选中本站数据库，导入本文件
+--   B. 命令行 mysql -u用户名 -p 数据库名 < upgrade.sql
+--   C. 后台「在线更新」上传包含本文件的更新包，安装器自动执行
 --
--- 需要 MySQL 5.7+ / MariaDB 5.2+。若数据库版本更低，请跳过本节，
--- 程序会保持旧的 IP 维度约束继续运行（功能降级，不会报错）。
-
-ALTER TABLE `wm_like` ADD COLUMN `owner_key` varchar(64)
-    GENERATED ALWAYS AS (IF(user_id > 0, CONCAT('u', user_id), CONCAT('i', ip_hash))) VIRTUAL;
-
-ALTER TABLE `wm_like` ADD UNIQUE KEY `uk_owner` (`post_id`, `owner_key`);
-
--- 确认上面一条执行成功后，再执行这一条删除旧的 IP 维度唯一键。
--- 如果 ADD UNIQUE KEY 因历史数据重复而失败，请勿执行本行。
-ALTER TABLE `wm_like` DROP INDEX `uk_post_ip`;
+-- 注意事项
+--   * 表前缀默认 wm_，安装时若改过请全局替换后再执行
+--   * 可重复执行：建表用 IF NOT EXISTS；重复的字段/索引会被在线更新自动忽略
+-- ============================================================================
 
 
--- ---------- 3. 清理失效的迁移标记（可选）----------
--- 旧版本会在设置表写入 schema_version 用于判断是否执行迁移，
--- 新版本已移除运行时迁移逻辑，该项不再被读取。
+-- ---------------------------------------------------------------------------
+-- 1) 分享音乐表
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `wm_music` (
+    `id` int unsigned NOT NULL AUTO_INCREMENT,
+    `platform` varchar(20) NOT NULL DEFAULT '' COMMENT 'netease/qq/kugou/kuwo/apple/spotify/link',
+    `song_id` varchar(100) NOT NULL DEFAULT '' COMMENT '平台歌曲ID',
+    `song_name` varchar(200) NOT NULL DEFAULT '',
+    `artist` varchar(200) NOT NULL DEFAULT '',
+    `album` varchar(200) NOT NULL DEFAULT '',
+    `cover` varchar(500) NOT NULL DEFAULT '' COMMENT '封面地址',
+    `url` varchar(500) NOT NULL DEFAULT '' COMMENT '歌曲页面地址',
+    `audio` varchar(500) NOT NULL DEFAULT '' COMMENT '可直链播放地址，可能为空',
+    `user_id` int unsigned NOT NULL DEFAULT '0',
+    `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_song` (`platform`,`song_id`),
+    KEY `idx_user` (`user_id`,`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='分享音乐';
 
-DELETE FROM `wm_setting` WHERE `skey` = 'schema_version';
+
+-- ---------------------------------------------------------------------------
+-- 2) 动态表关联音乐
+--    不使用 AFTER 指定列位置，避免旧库缺少该列时直接失败
+-- ---------------------------------------------------------------------------
+ALTER TABLE `wm_post` ADD COLUMN `music_id` int unsigned NOT NULL DEFAULT '0' COMMENT '分享音乐ID，0为无';
+
+ALTER TABLE `wm_post` ADD KEY `idx_music` (`music_id`);
+
+
+-- ---------------------------------------------------------------------------
+-- 3) 新增设置项
+-- ---------------------------------------------------------------------------
+INSERT INTO `wm_setting` (`skey`, `svalue`) VALUES ('notify_on_update', '1') ON DUPLICATE KEY UPDATE `svalue` = VALUES(`svalue`);

@@ -48,6 +48,10 @@ function wm_db(): PDO
 /** 执行语句，返回 PDOStatement */
 function wm_query(string $sql, array $params = []): PDOStatement
 {
+    // 记录最后一次执行的语句（只含占位符，不含真实值）。
+    // 保存失败时把这段拼进错误日志，才能一眼看出是 SQL 拼错还是数据问题，
+    // 否则只能靠猜——这个坑已经踩过多次了。
+    $GLOBALS['wm_last_sql'] = $sql;
     $st = wm_db()->prepare($sql);
     foreach ($params as $k => $v) {
         $key = is_int($k) ? $k + 1 : $k;
@@ -59,6 +63,39 @@ function wm_query(string $sql, array $params = []): PDOStatement
     }
     $st->execute();
     return $st;
+}
+
+/** 取最后一条执行的 SQL（诊断用；失败日志里带上它） */
+function wm_last_sql(int $max = 600): string
+{
+    $sql = isset($GLOBALS['wm_last_sql']) ? (string)$GLOBALS['wm_last_sql'] : '';
+    $sql = preg_replace('/\s+/', ' ', trim($sql)) ?? '';
+    return mb_strlen($sql) > $max ? mb_substr($sql, 0, $max) . '…' : $sql;
+}
+
+/**
+ * 拼 INSERT 语句
+ *
+ * 列名与占位符都由数组生成，结构上不可能出现「少一个逗号」这类拼接错误。
+ * $raw 里以 'NOW()' 这类字面量结尾的列表示直接写入的 SQL 片段。
+ */
+function wm_build_insert(string $table, array $cols, array $raw = []): string
+{
+    $ph = [];
+    foreach ($cols as $c) {
+        $ph[] = isset($raw[$c]) ? $raw[$c] : '?';
+    }
+    return 'INSERT INTO ' . $table . ' (' . implode(',', $cols) . ') VALUES (' . implode(',', $ph) . ')';
+}
+
+/** 拼 UPDATE 语句：$set 为 [列 => 占位符或字面量] */
+function wm_build_update(string $table, array $set): string
+{
+    $parts = [];
+    foreach ($set as $col => $ph) {
+        $parts[] = $col . ' = ' . $ph;
+    }
+    return 'UPDATE ' . $table . ' SET ' . implode(', ', $parts);
 }
 
 function wm_one(string $sql, array $params = []): ?array

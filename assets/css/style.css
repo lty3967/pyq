@@ -13,7 +13,6 @@ button{font-family:inherit}
 .cover-img{width:100%;height:100%;object-fit:cover;display:block}
 .cover-default{background:linear-gradient(135deg,#0b8f4b 0%,#07c160 40%,#3ecf8e 100%)}
 .cover-mask{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.28) 0,rgba(0,0,0,0) 45%,rgba(0,0,0,.18) 100%)}
-.cover-back{position:absolute;left:10px;top:12px;width:34px;height:34px;line-height:30px;text-align:center;color:#fff;font-size:30px;background:rgba(0,0,0,.18);border-radius:50%}
 .cover-user{position:absolute;right:16px;bottom:-24px;display:flex;align-items:flex-end;gap:12px;z-index:3;color:inherit;text-decoration:none;cursor:pointer}
 .cu-text{text-align:right;padding-bottom:34px}
 .cu-name{color:#fff;font-size:18px;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,.45)}
@@ -101,10 +100,55 @@ button{font-family:inherit}
 .cb-nick,.cb-mail{flex:1;height:34px;border:1px solid #e0e0e0;border-radius:5px;padding:0 10px;font-size:14px;outline:none;background:#fff;min-width:0}
 .cb-text{flex:1;border:1px solid #e0e0e0;border-radius:5px;padding:7px 10px;font-size:14px;outline:none;resize:none;background:#fff;min-width:0;font-family:inherit;line-height:1.5}
 .cb-nick:focus,.cb-mail:focus,.cb-text:focus{border-color:#07c160}
+.cb-emoji{flex:none;width:38px;align-self:stretch;border:1px solid #e0e0e0;border-radius:5px;background:#fff;font-size:19px;line-height:1;cursor:pointer;padding:0}
+.cb-emoji:active{background:#f2f2f2}
 .cb-send{flex:none;background:#07c160;color:#fff;border:none;border-radius:5px;padding:0 18px;font-size:14px;cursor:pointer;align-self:stretch}
 .cb-send:active{background:#06ad56}
 .cb-send:disabled{background:#9bdfba;cursor:not-allowed}
 .cb-tip{font-size:11px;color:#999;min-height:14px}
+
+/* ---------- 表情选择器 ---------- */
+.emoji-panel{position:fixed;z-index:120;width:min(340px,94vw);background:#fff;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.18);padding:8px;box-sizing:border-box}
+.emoji-tabs{display:flex;gap:4px;border-bottom:1px solid #f0f0f0;padding-bottom:6px;margin-bottom:6px;flex-wrap:wrap}
+.emoji-tabs .emoji-tab{flex:1;min-width:52px;border:0;background:#f7f7f7;color:#576b95;font-size:12px;padding:5px 0;border-radius:5px;cursor:pointer}
+.emoji-tabs .emoji-tab.on{background:#07c160;color:#fff}
+.emoji-grid,.emoji-recent{display:grid;grid-template-columns:repeat(8,1fr);gap:2px;max-height:190px;overflow-y:auto}
+.emoji-recent{border-bottom:1px solid #f0f0f0;padding-bottom:6px;margin-bottom:6px;max-height:none}
+.emoji-recent:empty{display:none}
+.emoji-recent .emoji-sub{grid-column:1/-1;font-size:11px;color:#b2b2b2;padding:2px 0 3px}
+.emoji-grid .emoji-cell,.emoji-recent .emoji-cell{border:0;background:none;font-size:21px;line-height:1;padding:5px 0;border-radius:6px;cursor:pointer}
+.emoji-grid .emoji-cell:hover,.emoji-recent .emoji-cell:hover{background:#f2f2f2}
+.emoji-tip{font-size:11px;color:#b2b2b2;text-align:center;padding-top:6px}
+.emoji-grid::-webkit-scrollbar,.emoji-recent::-webkit-scrollbar{width:5px}
+.emoji-grid::-webkit-scrollbar-thumb,.emoji-recent::-webkit-scrollbar-thumb{background:#ddd;border-radius:3px}
+
+/* ---------- 分享音乐卡片（对齐微信朋友圈样式） ---------- */
+.music-card{display:flex;align-items:center;gap:10px;max-width:78%;margin:2px 0 8px;background:#f7f7f7;border-radius:6px;padding:8px 10px;position:relative}
+.mc-cover{position:relative;flex:none;width:48px;height:48px;border-radius:4px;overflow:hidden;background:#e8e8e8}
+.mc-cover img{width:100%;height:100%;object-fit:cover;display:block}
+.mc-ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#b2b2b2;font-size:22px}
+.mc-note{position:absolute;right:2px;top:2px;width:17px;height:17px;border-radius:50%;background:rgba(0,0,0,.45);color:#fff;font-size:10px;line-height:17px;text-align:center}
+.mc-info{flex:1;min-width:0;color:inherit;text-decoration:none}
+.mc-name{color:#576b95;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mc-artist{color:#999;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.mc-play{flex:none;width:32px;height:32px;border-radius:50%;border:0;background:#dcdcdc;color:#576b95;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.mc-play:hover{background:#07c160;color:#fff}
+.mc-play .mp-ico{font-size:12px;line-height:1}
+
+/* ---------- 底部音乐播放条 ---------- */
+.music-player{position:fixed;left:0;right:0;bottom:0;z-index:70;background:rgba(250,250,250,.97);border-top:1px solid #e6e6e6;box-shadow:0 -2px 12px rgba(0,0,0,.08);padding-bottom:env(safe-area-inset-bottom)}
+.mp-inner{max-width:640px;margin:0 auto;display:flex;align-items:center;gap:10px;padding:9px 12px}
+.mp-disc{flex:none;width:40px;height:40px;border-radius:50%;overflow:hidden;background:#dcdcdc;display:block}
+.mp-disc img{width:100%;height:100%;object-fit:cover;display:block}
+.mp-disc.spin img{animation:mp-spin 6s linear infinite}
+@keyframes mp-spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+.mp-text{flex:1;min-width:0}
+.mp-name{font-size:14px;color:#191919;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mp-artist{font-size:12px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.mp-btn{flex:none;width:38px;height:38px;border-radius:50%;border:0;background:#07c160;color:#fff;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.mp-close{flex:none;width:30px;height:30px;border:0;background:none;color:#999;font-size:22px;line-height:1;cursor:pointer}
+.mp-progress{height:2px;background:#e8e8e8;max-width:640px;margin:0 auto}
+.mp-progress span{display:block;height:100%;width:0;background:#07c160}
 
 /* ---------- 图片查看器 ---------- */
 .viewer{position:fixed;inset:0;background:#000;z-index:100;display:flex;align-items:center;justify-content:center}

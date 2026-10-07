@@ -127,4 +127,15 @@
     });
 
     render();
+
+    // 对外暴露清空能力：勾选「分享音乐」时由 music.js 调用
+    window.WmUploader = {
+        reset: function () {
+            items = [];
+            sync();
+        },
+        count: function () {
+            return items.length;
+        }
+    };
 }());

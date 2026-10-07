@@ -19,6 +19,22 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     wm_require_post(true);
     $act = wm_input('act');
 
+    // 修复文件权限（应对早期更新器把 755 降级成 644 的情况）
+    if ($act === 'fix_perm') {
+        if (!wm_rate_limit('admin_update', 10, 3600, 'admin' . (int)$admin['id'])) {
+            wm_flash(false, '操作过于频繁，请稍后再试');
+            wm_redirect('update.php');
+        }
+        $r = wm_update_fix_permissions();
+        if ($r['ok']) {
+            wm_log('修复文件权限', $r['msg'], (int)$admin['id']);
+            wm_flash(true, $r['msg']);
+        } else {
+            wm_flash(false, $r['msg']);
+        }
+        wm_redirect('update.php');
+    }
+
     // AJAX 检查更新
     if ($act === 'check') {
         $m = wm_update_fetch_manifest(wm_update_channel());
@@ -29,6 +45,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $has = version_compare($latest, WM_VERSION, '>');
         $min = (string) ($m['data']['min_version'] ?? '');
         $tooLow = $min !== '' && version_compare(WM_VERSION, $min, '<');
+
+        // 检测到新版本：自动发邮件通知站长（同一版本只发一次，见 wm_notify_update）
+        $notified = null;
+        if ($has) {
+            require_once WM_INC . '/mailer.php';
+            $notified = wm_notify_update(
+                $latest,
+                WM_VERSION,
+                (string) ($m['data']['time'] ?? ''),
+                (string) ($m['data']['changelog'] ?? ''),
+                (int) $admin['id']
+            );
+        }
+
         wm_json(true, 'ok', [
             'latest' => $latest,
             'current' => WM_VERSION,
@@ -38,6 +68,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             'changelog' => (string) ($m['data']['changelog'] ?? ''),
             'size' => (int) ($m['data']['size'] ?? 0),
             'time' => (string) ($m['data']['time'] ?? ''),
+            'mailed' => $notified !== null ? (bool) $notified['ok'] : false,
         ]);
     }
 
@@ -174,6 +205,16 @@ $currentVer = WM_VERSION;
         </form>
     </section>
 </div>
+
+<section class="box" style="margin-top:16px">
+    <div class="box-hd"><h2>文件权限修复</h2><span class="hint">更新不会改变原有文件权限；若曾被降级为 644，可在此一键还原</span></div>
+    <form class="form" method="post" action="update.php">
+        <?= wm_csrf_field() ?>
+        <input type="hidden" name="act" value="fix_perm">
+        <div class="fh" style="margin-bottom:10px">把 php / js / css 等代码文件统一还原为站点主流权限（自动识别，通常是 755）；config.php、data/、uploads/、install/ 会被跳过，不受影响。</div>
+        <button class="btn" type="submit" data-confirm="将统一修复站点代码文件权限，确定继续？">修复文件权限</button>
+    </form>
+</section>
 <?php wm_foot(); ?>
 
 <script>
@@ -226,6 +267,7 @@ $currentVer = WM_VERSION;
                 html += '<div class="alert warn">检测到新版本 V' + d.latest + '，但当前版本过低（需先升级到 ' + d.min_version + ' 以上），请使用「本地更新包」。</div>';
             } else {
                 html += '<div class="alert ok">发现新版本：V' + d.latest + '（当前 V' + d.current + '）</div>';
+                if (d.mailed) { html += '<div class="hint">已自动邮件通知站长。</div>'; }
                 if (d.time) { html += '<div class="hint">发布时间：' + d.time + '</div>'; }
                 if (d.changelog) {
                     html += '<pre style="white-space:pre-wrap;background:#fafafa;border:1px solid #eee;border-radius:8px;padding:12px;margin:10px 0;font:13px/1.7 monospace">' + d.changelog.replace(/[&<>]/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]; }) + '</pre>';

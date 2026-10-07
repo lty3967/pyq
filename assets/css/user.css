@@ -1,3 +1,8 @@
+/*
+ * 用户中心样式
+ * 外壳（侧边栏 / 顶栏 / 卡片 / 表单按钮等）统一复用 admin.css；
+ * 本文件只保留用户中心内容区独有的组件样式，配色与后台保持一致。
+ */
 * {
     box-sizing: border-box;
 }
@@ -7,8 +12,8 @@
 }
 
 :root {
-    --green: #07a854;
-    --green-dark: #078a47;
+    --green: #07c160;
+    --green-dark: #06ad56;
     --text: #29313d;
     --muted: #8b949e;
     --border: #e7eaee;
@@ -32,68 +37,11 @@ a:hover {
     text-decoration: underline;
 }
 
-.user-shell {
-    min-height: 100vh;
+.muted {
+    color: var(--muted);
 }
 
-.user-top {
-    display: flex;
-    align-items: center;
-    gap: 28px;
-    min-height: 58px;
-    padding: 10px max(18px, calc((100% - 1080px) / 2));
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-}
-
-.brand {
-    color: var(--green);
-    font-size: 17px;
-    font-weight: 700;
-    white-space: nowrap;
-}
-
-.user-nav {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    flex-wrap: wrap;
-}
-
-.user-nav a {
-    color: #68717d;
-    white-space: nowrap;
-}
-
-.user-nav a:hover {
-    color: var(--green);
-}
-
-.user-main {
-    max-width: 1080px;
-    margin: 0 auto;
-    padding: 28px 18px;
-}
-
-.page-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 14px;
-    margin-bottom: 18px;
-}
-
-.page-head h1 {
-    margin: 0;
-    color: #202733;
-    font-size: 22px;
-    line-height: 1.3;
-}
-
-.back {
-    color: #68717d;
-}
-
+/* 统计卡片 */
 .stat-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -105,7 +53,8 @@ a:hover {
 .panel {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 10px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .04);
 }
 
 .stat-grid > div {
@@ -124,9 +73,10 @@ a:hover {
     font-size: 13px;
 }
 
+/* 卡片 */
 .panel {
     margin-bottom: 16px;
-    padding: 18px;
+    padding: 16px 18px 18px;
 }
 
 .panel-title {
@@ -136,7 +86,7 @@ a:hover {
     gap: 12px;
     margin-bottom: 12px;
     padding-bottom: 12px;
-    border-bottom: 1px solid #edf0f2;
+    border-bottom: 1px solid #f0f0f0;
     font-size: 16px;
     font-weight: 600;
 }
@@ -160,10 +110,31 @@ a:hover {
     font-weight: 500;
 }
 
-.muted {
-    color: var(--muted);
+/* 提示 */
+.alert {
+    margin-bottom: 14px;
+    padding: 11px 14px;
+    border-radius: 8px;
 }
 
+.alert.ok {
+    background: #f0f9eb;
+    color: #3d8d2f;
+}
+
+.alert.err {
+    background: #fef0f0;
+    color: #e6473b;
+}
+
+/* 双列 */
+.two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+/* 表单（块级排版，与 admin.css 的 .fr 行排版区分） */
 .form {
     max-width: 720px;
 }
@@ -211,6 +182,7 @@ a:hover {
     margin: 0;
 }
 
+/* 主/次按钮（与后台 .btn 绿色一致） */
 .primary {
     display: inline-block;
     padding: 9px 20px;
@@ -232,57 +204,21 @@ a:hover {
     font-size: 13px;
 }
 
-.alert {
-    margin-bottom: 14px;
-    padding: 11px 14px;
+.secondary {
+    padding: 8px 14px;
+    border: 1px solid #d8dee5;
     border-radius: 6px;
-}
-
-.alert.ok {
-    background: #edf9f1;
-    color: #087b3f;
-}
-
-.alert.err {
-    background: #fff0f0;
-    color: #c33b3b;
-}
-
-.two-col {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-}
-
-.inline-edit {
-    display: inline-flex;
-    gap: 6px;
-    min-width: 260px;
-}
-
-.comment-content {
-    max-width: 360px;
-    white-space: pre-wrap;
-    word-break: break-word;
-}
-
-.inline-edit input {
-    min-width: 0;
-    margin: 0;
-    padding: 5px;
-}
-
-.link-btn {
-    border: 0;
-    background: none;
-    color: var(--green);
+    background: #fff;
+    color: #56616d;
     cursor: pointer;
 }
 
-.danger-link {
-    color: #d64545;
+.secondary:hover {
+    border-color: var(--green);
+    color: var(--green);
 }
 
+/* 头像编辑 */
 .avatar-editor {
     display: flex;
     align-items: center;
@@ -320,18 +256,11 @@ a:hover {
     flex-wrap: wrap;
 }
 
-.secondary {
-    padding: 8px 14px;
-    border: 1px solid #d8dee5;
-    border-radius: 6px;
-    background: #fff;
-    color: #56616d;
-    cursor: pointer;
-}
-
-.secondary:hover {
-    border-color: var(--green);
-    color: var(--green);
+/* 评论 */
+.comment-content {
+    max-width: 360px;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 .comment-actions {
@@ -405,13 +334,45 @@ a:hover {
     color: #606b76;
 }
 
-.user-foot {
-    padding: 25px;
-    color: #9aa2ab;
-    font-size: 12px;
-    text-align: center;
+.inline-edit {
+    display: inline-flex;
+    gap: 6px;
+    min-width: 260px;
 }
 
+.inline-edit input {
+    min-width: 0;
+    margin: 0;
+    padding: 5px;
+}
+
+/* 表格行内操作：编辑 / 删除等并排展示（沿用后台 .btn.sm 的按钮样式） */
+.row-acts {
+    white-space: nowrap;
+}
+
+.row-acts .inline-form {
+    display: inline-block;
+    margin: 0 0 0 6px;
+    vertical-align: middle;
+}
+
+.row-acts .btn,
+.comment-actions .btn {
+    vertical-align: middle;
+}
+
+.inline-form {
+    display: inline-block;
+    margin: 0 4px 0 0;
+    vertical-align: middle;
+}
+
+.comment-actions .inline-form:last-child {
+    margin-right: 0;
+}
+
+/* 上传器（发布动态） */
 .upload-box {
     margin-top: 6px;
     padding: 12px;
@@ -477,113 +438,7 @@ a:hover {
     color: #fff;
 }
 
-.account-auth {
-    display: grid;
-    min-height: 100vh;
-    place-items: center;
-    padding: 20px;
-}
-
-.auth-box {
-    width: min(100%, 390px);
-    padding: 32px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: #fff;
-    box-shadow: 0 12px 35px rgb(32 39 51 / 8%);
-}
-
-.auth-mark {
-    margin-bottom: 8px;
-    color: var(--green);
-    font-weight: 700;
-}
-
-.auth-box h1 {
-    margin: 0 0 24px;
-    color: #202733;
-    font-size: 24px;
-    line-height: 1.3;
-}
-
-.auth-box form {
-    display: grid;
-    gap: 16px;
-}
-
-.auth-box label {
-    display: grid;
-    gap: 7px;
-    color: #5f6b78;
-    font-size: 13px;
-    font-weight: 500;
-}
-
-.auth-box input {
-    width: 100%;
-    height: 44px;
-    padding: 0 13px;
-    border: 1px solid #d9dfe5;
-    border-radius: 7px;
-    outline: none;
-    background: #fbfcfd;
-    color: var(--text);
-    font: inherit;
-    transition: border-color .18s ease, box-shadow .18s ease, background-color .18s ease;
-}
-
-.auth-box input:hover {
-    border-color: #b8c2cc;
-    background: #fff;
-}
-
-.auth-box input:focus {
-    border-color: var(--green);
-    background: #fff;
-    box-shadow: 0 0 0 3px rgb(7 168 84 / 12%);
-}
-
-.auth-box .primary {
-    width: 100%;
-    height: 44px;
-    margin-top: 2px;
-    font-size: 15px;
-    font-weight: 600;
-}
-
-.auth-box .alert {
-    margin-bottom: 18px;
-}
-
-.auth-box input:-webkit-autofill {
-    -webkit-box-shadow: 0 0 0 1000px #fbfcfd inset;
-    -webkit-text-fill-color: var(--text);
-}
-
-.auth-links {
-    display: flex;
-    justify-content: space-between;
-    margin: 18px 0 0;
-    font-size: 13px;
-}
-
-@media (max-width: 700px) {
-    .user-top {
-        align-items: flex-start;
-        flex-direction: column;
-        gap: 7px;
-        padding: 10px 14px;
-    }
-
-    .user-nav {
-        gap: 12px;
-        font-size: 13px;
-    }
-
-    .user-main {
-        padding: 20px 12px;
-    }
-
+@media (max-width: 900px) {
     .stat-grid {
         grid-template-columns: repeat(2, 1fr);
     }

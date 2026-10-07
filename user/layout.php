@@ -17,7 +17,7 @@
 declare(strict_types=1);
 
 require dirname(__DIR__) . '/includes/init.php';
-require WM_INC . '/model.php';
+require_once WM_INC . '/model.php';
 
 $user = wm_require_user();
 

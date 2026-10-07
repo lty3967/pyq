@@ -74,12 +74,14 @@ function wm_schema(string $p): array
             `status` tinyint NOT NULL DEFAULT '1',
             `is_top` tinyint NOT NULL DEFAULT '0',
             `allow_comment` tinyint NOT NULL DEFAULT '1',
+            `music_id` int unsigned NOT NULL DEFAULT '0',
             `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
             `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
             KEY `idx_list` (`status`,`is_top`,`id`),
             KEY `idx_cat` (`cat_id`,`status`),
             KEY `idx_user` (`user_id`,`id`),
+            KEY `idx_music` (`music_id`),
             KEY `idx_created` (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
 
@@ -195,6 +197,24 @@ function wm_schema(string $p): array
             PRIMARY KEY (`id`),
             KEY `idx_created` (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+        // 分享音乐（元信息，同一首歌被多次分享时复用同一条记录）
+        "CREATE TABLE IF NOT EXISTS `{$p}music` (
+            `id` int unsigned NOT NULL AUTO_INCREMENT,
+            `platform` varchar(20) NOT NULL DEFAULT '',
+            `song_id` varchar(100) NOT NULL DEFAULT '',
+            `song_name` varchar(200) NOT NULL DEFAULT '',
+            `artist` varchar(200) NOT NULL DEFAULT '',
+            `album` varchar(200) NOT NULL DEFAULT '',
+            `cover` varchar(500) NOT NULL DEFAULT '',
+            `url` varchar(500) NOT NULL DEFAULT '',
+            `audio` varchar(500) NOT NULL DEFAULT '',
+            `user_id` int unsigned NOT NULL DEFAULT '0',
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_song` (`platform`,`song_id`),
+            KEY `idx_user` (`user_id`,`id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
     ];
 }
 
@@ -235,6 +255,7 @@ function wm_default_settings(): array
         'smtp_from_name'     => '我的朋友圈',
         'notify_email'       => '',
         'notify_on_comment'  => '0',
+        'notify_on_update'   => '1',
     ];
 }
 

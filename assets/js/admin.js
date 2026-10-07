@@ -165,6 +165,13 @@
     });
 
     render();
+
+    // 对外暴露清空能力：勾选「分享音乐」时由 music.js 调用，
+    // 把已选图片/视频一并清掉（分享音乐与图文视频互斥）
+    window.WmUploader = {
+      reset: function () { items = []; sync(); },
+      count: function () { return items.length; }
+    };
   }
 
   /* ---------------- 单图上传（头像 / 封面 / 图标） ---------------- */

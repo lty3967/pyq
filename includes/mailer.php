@@ -240,3 +240,73 @@ function wm_mail_template(string $title, string $content): string
         . '<div style="padding:16px 24px;background:#fafafa;color:#999;font-size:12px">本邮件由 ' . $site . ' 系统自动发送</div>'
         . '</div></div>';
 }
+
+/**
+ * 检测到新版本时邮件通知站长
+ *
+ * 去重规则：记录「已通知过的版本号」，同一版本只发一次。
+ * update.php 每次打开页面都会自动检测一次，没有去重的话站长会天天收到重复邮件。
+ *
+ * @return array{ok:bool,msg:string} ok=false 时 msg 说明未发送的原因
+ */
+function wm_notify_update(string $latest, string $current, string $time = '', string $changelog = '', int $adminId = 0): array
+{
+    if ((string)wm_setting('notify_on_update', '1') !== '1') {
+        return ['ok' => false, 'msg' => '已关闭新版本邮件通知'];
+    }
+    if ($latest === '' || version_compare($latest, $current, '<=')) {
+        return ['ok' => false, 'msg' => '没有新版本'];
+    }
+    if ((string)wm_setting('update_notified_version', '') === $latest) {
+        return ['ok' => false, 'msg' => '该版本已通知过'];
+    }
+
+    // 收件人：优先「发信功能」里配置的站长邮箱，其次当前管理员账号邮箱
+    $to = trim((string)wm_setting('notify_email', ''));
+    if ($to === '' && $adminId > 0) {
+        $row = wm_one('SELECT email FROM ' . wm_t('admin') . ' WHERE id = ? LIMIT 1', [$adminId]);
+        $to = $row !== null ? trim((string)($row['email'] ?? '')) : '';
+    }
+    if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
+        return ['ok' => false, 'msg' => '未配置有效的站长邮箱'];
+    }
+
+    // 双保险：限流之外再做一层按版本的去重间隔
+    if (!wm_rate_limit('update_notify', 6, 3600)) {
+        return ['ok' => false, 'msg' => '通知过于频繁，已跳过'];
+    }
+
+    $siteName = (string)wm_setting('site_name', '朋友圈');
+    $detail = '<p>站点 <b>' . e($siteName) . '</b> 检测到新版本：<b style="color:#07c160">V' . e($latest) . '</b></p>'
+        . '<p>当前版本：V' . e($current) . ($time !== '' ? '，发布时间：' . e($time) : '') . '</p>';
+    if ($changelog !== '') {
+        $detail .= '<p style="color:#666">更新内容：</p>'
+            . '<pre style="white-space:pre-wrap;background:#fafafa;border:1px solid #eee;border-radius:8px;padding:12px;'
+            . 'margin:10px 0;font:13px/1.7 monospace;color:#333">' . e(wm_cut($changelog, 3000)) . '</pre>';
+    }
+    $detail .= '<p style="color:#999;font-size:13px">请登录后台「在线更新」页面执行升级。</p>';
+
+    $subject = '【' . $siteName . '】检测到新版本 V' . $latest;
+    $body = wm_mail_template('发现新版本 V' . $latest, $detail);
+
+    try {
+        $mailer = new WmMailer();
+        $res = $mailer->send($to, $subject, $body);
+        wm_exec('INSERT INTO ' . wm_t('mail') . ' (to_mail, subject, body, status, result, admin_id, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, NOW())',
+            [mb_substr($to, 0, 480), mb_substr($subject, 0, 200), mb_substr($body, 0, 60000),
+             $res['ok'] ? 1 : 2, mb_substr((string)$res['msg'], 0, 400), $adminId]);
+        if ($res['ok']) {
+            // 只有真发出去了才记版本号，失败时下次检测还能重试
+            wm_setting_set('update_notified_version', $latest);
+            wm_log('新版本邮件通知', 'V' . $latest . ' → ' . $to, $adminId);
+            return ['ok' => true, 'msg' => '已通知 ' . $to];
+        }
+        error_log('update notify mail fail: ' . (string)$res['msg']);
+        return ['ok' => false, 'msg' => '发送失败：' . $res['msg']];
+    } catch (Throwable $e) {
+        // 通知失败绝不能影响「检查更新」这个只读接口的响应
+        error_log('update notify fail: ' . $e->getMessage());
+        return ['ok' => false, 'msg' => '通知异常'];
+    }
+}
