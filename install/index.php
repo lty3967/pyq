@@ -12,7 +12,7 @@ define('WM_UPLOAD', WM_ROOT . '/uploads');
 define('WM_CONFIG_FILE', WM_INC . '/config.php');
 define('WM_LOCK_FILE', WM_DATA . '/install.lock');
 // 安装页不加载 init.php（需自行定义常量），此处单独声明以便展示与程序一致的版本号
-define('WM_VERSION', '1.0.8');
+define('WM_VERSION', '1.3.3');
 
 mb_internal_encoding('UTF-8');
 date_default_timezone_set('Asia/Shanghai');

@@ -10,6 +10,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/inc/layout.php';
+require_once WM_INC . '/oauth.php';
 
 $admin = wm_require_admin();
 
@@ -81,6 +82,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             wm_exec('DELETE FROM ' . wm_t('comment') . ' WHERE user_id = ?', [$userId]);
             wm_exec('DELETE FROM ' . wm_t('like') . ' WHERE user_id = ?', [$userId]);
             wm_exec('DELETE FROM ' . wm_t('media') . ' WHERE user_id = ?', [$userId]);
+            // 快捷登录绑定：不清理会留下孤儿记录，且该第三方标识将再也无法被绑定
+            if (wm_oauth_ready()) {
+                wm_exec('DELETE FROM ' . wm_t('user_oauth') . ' WHERE user_id = ?', [$userId]);
+            }
             wm_exec('DELETE FROM ' . wm_t('user') . ' WHERE id = ?', [$userId]);
 
             $db->commit();
@@ -136,11 +141,20 @@ $total = (int) wm_value(
 $pg = wm_paging($total, $page, $pageSize);
 $page = $pg['page'];
 $offset = $pg['offset'];
+// 快捷登录绑定列：表未创建时降级为空列，避免未升级站点整页报错
+$oauthCol = wm_oauth_ready()
+    ? ", COALESCE((SELECT GROUP_CONCAT(o.provider ORDER BY o.id SEPARATOR ',') FROM "
+        . wm_t('user_oauth') . " o WHERE o.user_id = u.id), '') AS oauth_providers"
+    : ", '' AS oauth_providers";
+// 渲染绑定徽章要用方式名（QQ / 微信）
+$oauthDefs = wm_oauth_methods();
+
 $users = wm_all(
     'SELECT u.*,
             COALESCE((SELECT COUNT(*) FROM ' . wm_t('post') . ' p WHERE p.user_id = u.id), 0) AS posts,
             COALESCE((SELECT SUM(p.views) FROM ' . wm_t('post') . ' p WHERE p.user_id = u.id), 0) AS views,
-            COALESCE((SELECT COUNT(*) FROM ' . wm_t('comment') . ' c WHERE c.user_id = u.id), 0) AS comments
+            COALESCE((SELECT COUNT(*) FROM ' . wm_t('comment') . ' c WHERE c.user_id = u.id), 0) AS comments'
+        . $oauthCol . '
      FROM ' . wm_t('user') . ' u' . $where . '
      ORDER BY u.id DESC
      LIMIT ' . $pageSize . ' OFFSET ' . $offset,
@@ -167,6 +181,7 @@ wm_head('用户管理');
             <th>动态</th>
             <th>浏览</th>
             <th>评论</th>
+            <th>快捷登录</th>
             <th>状态</th>
             <th>注册时间</th>
             <th>操作</th>
@@ -174,7 +189,7 @@ wm_head('用户管理');
         </thead>
         <tbody>
         <?php if (!$users): ?>
-            <tr><td colspan="10" class="none">暂无用户</td></tr>
+            <tr><td colspan="11" class="none">暂无用户</td></tr>
         <?php endif; ?>
 
         <?php foreach ($users as $user): ?>
@@ -186,6 +201,21 @@ wm_head('用户管理');
                 <td><?= (int) $user['posts'] ?></td>
                 <td><?= (int) $user['views'] ?></td>
                 <td><?= (int) $user['comments'] ?></td>
+                <td>
+                    <?php
+                    $provs = array_values(array_filter(explode(',', (string) ($user['oauth_providers'] ?? ''))));
+                    if (!$provs) {
+                        echo '<span class="hint">—</span>';
+                    } else {
+                        echo '<span class="frow" style="gap:4px">';
+                        foreach ($provs as $pv) {
+                            $pn = $oauthDefs[$pv]['name'] ?? $pv;
+                            echo '<span class="st on" title="已绑定' . e($pn) . '快捷登录">' . e($pn) . '</span>';
+                        }
+                        echo '</span>';
+                    }
+                    ?>
+                </td>
                 <td>
                     <?= (int) $user['status'] === 1
                         ? '<span class="st on">正常</span>'

@@ -1,9 +1,14 @@
 <?php
 /**
  * 上传处理：严格 MIME/扩展白名单、图像重编码、视频头校验、随机文件名
+ *
+ * 落盘分两步：先在本地完成「重编码 + 缩略图」，再由 wm_storage_publish() 把成品
+ * 推送到后台配置的存储（本地 / 各类云存储）；推送到远端成功后删除本地临时文件。
  */
 declare(strict_types=1);
 if (!defined('WM_INIT')) { exit('403'); }
+
+require_once WM_INC . '/storage.php';
 
 const WM_VIDEO_EXT = ['mp4', 'webm'];
 
@@ -137,15 +142,31 @@ function wm_upload_image(array $file): array
         $w = (int)$final[0];
         $h = (int)$final[1];
     }
+    $fileSize = (int)filesize($target);
 
+    // 缩略图必须基于本地原图生成，所以先出缩略图再统一推送
     $thumbRel = wm_image_thumb($target, $ext);
+
+    $mime = 'image/' . ($ext === 'jpg' ? 'jpeg' : $ext);
+    $pub = wm_storage_publish($rel . '/' . $name, $target, $mime);
+    if ((string)$pub['warn'] !== '') {
+        error_log('image upload warn: ' . (string)$pub['warn']);
+    }
+    $thumbOut = '';
+    if ($thumbRel !== '') {
+        $tPub = wm_storage_publish($thumbRel, WM_ROOT . '/' . $thumbRel, $mime);
+        if ((string)$tPub['warn'] !== '') {
+            error_log('thumb upload warn: ' . (string)$tPub['warn']);
+        }
+        $thumbOut = (string)$tPub['path'];
+    }
 
     return [
         'ok' => true, 'msg' => 'ok',
-        'path' => $rel . '/' . $name,
-        'thumb' => $thumbRel,
+        'path' => (string)$pub['path'],
+        'thumb' => $thumbOut,
         'width' => $w, 'height' => $h,
-        'size' => (int)filesize($target),
+        'size' => $fileSize,
     ];
 }
 
@@ -309,11 +330,89 @@ function wm_upload_video(array $file): array
         return ['ok' => false, 'msg' => '文件保存失败'];
     }
     @chmod($target, 0644);
+    $fileSize = (int)filesize($target);
+    $pub = wm_storage_publish($rel . '/' . $name, $target, 'video/' . ($ext === 'mp4' ? 'mp4' : 'webm'));
+    if ((string)$pub['warn'] !== '') {
+        error_log('video upload warn: ' . (string)$pub['warn']);
+    }
     return [
         'ok' => true, 'msg' => 'ok',
-        'path' => $rel . '/' . $name,
-        'size' => (int)filesize($target),
+        'path' => (string)$pub['path'],
+        'size' => $fileSize,
         'width' => 0, 'height' => 0, 'thumb' => '',
+    ];
+}
+
+/**
+ * 处理网站图标上传（favicon）：仅做原样落盘与合法性校验，
+ * 不重编码、不缩放，避免破坏 .ico 的多分辨率结构。
+ * 允许 .ico 与 .png，存入 uploads/site/ 目录。
+ */
+function wm_upload_favicon(array $file): array
+{
+    if (!isset($file['error']) || is_array($file['error'])) {
+        return ['ok' => false, 'msg' => '非法上传参数'];
+    }
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        return ['ok' => false, 'msg' => wm_upload_err((int)$file['error'])];
+    }
+    if (!is_uploaded_file($file['tmp_name'])) {
+        return ['ok' => false, 'msg' => '非法上传来源'];
+    }
+    $size = (int)($file['size'] ?? 0);
+    if ($size <= 0) {
+        return ['ok' => false, 'msg' => '空文件'];
+    }
+    if ($size > 2 * 1024 * 1024) {
+        return ['ok' => false, 'msg' => 'favicon 不能超过 2MB'];
+    }
+
+    // 优先用浏览器报的 MIME，再用扩展名兜底
+    $mime = (string)($file['type'] ?? '');
+    $ext = strtolower(pathinfo((string)($file['name'] ?? ''), PATHINFO_EXTENSION));
+    $map = [
+        'image/x-icon' => 'ico',
+        'image/vnd.microsoft.icon' => 'ico',
+        'image/png' => 'png',
+    ];
+    $realExt = $map[$mime] ?? (($ext === 'ico' || $ext === 'png') ? $ext : '');
+    if ($realExt === '') {
+        return ['ok' => false, 'msg' => '仅支持 .ico / .png 图标'];
+    }
+
+    // ico 校验容器魔数（00 00 01 00），png 用 GD 校验是否为真实图片
+    if ($realExt === 'ico') {
+        $fh = @fopen($file['tmp_name'], 'rb');
+        $magic = $fh !== false ? (string)fread($fh, 4) : '';
+        if ($fh !== false) { fclose($fh); }
+        if ($magic !== "\x00\x00\x01\x00") {
+            return ['ok' => false, 'msg' => '不是有效的 .ico 文件'];
+        }
+    } elseif (@getimagesize($file['tmp_name']) === false) {
+        return ['ok' => false, 'msg' => '不是有效的 PNG 文件'];
+    }
+
+    $rel = 'uploads/site';
+    $abs = WM_ROOT . '/' . $rel;
+    if (!is_dir($abs) && !@mkdir($abs, 0755, true) && !is_dir($abs)) {
+        return ['ok' => false, 'msg' => '存储目录创建失败'];
+    }
+    $name = 'favicon_' . wm_random(10) . '.' . $realExt;
+    $target = $abs . '/' . $name;
+    if (!@move_uploaded_file($file['tmp_name'], $target)) {
+        return ['ok' => false, 'msg' => '文件保存失败'];
+    }
+    @chmod($target, 0644);
+    $fileSize = (int)filesize($target);
+    $pub = wm_storage_publish($rel . '/' . $name, $target, $realExt === 'ico' ? 'image/x-icon' : 'image/png');
+    if ((string)$pub['warn'] !== '') {
+        error_log('favicon upload warn: ' . (string)$pub['warn']);
+    }
+
+    return [
+        'ok' => true, 'msg' => 'ok',
+        'path' => (string)$pub['path'],
+        'thumb' => '', 'width' => 0, 'height' => 0, 'size' => $fileSize,
     ];
 }
 
@@ -343,10 +442,13 @@ function wm_video_header_ok(string $path, string $ext): bool
  */
 function wm_upload_receive(string $type, array $file): array
 {
-    if (!in_array($type, ['image', 'video'], true)) {
+    if ($type === 'favicon') {
+        $res = wm_upload_favicon($file);
+    } elseif (!in_array($type, ['image', 'video'], true)) {
         return ['ok' => false, 'msg' => '上传类型无效'];
+    } else {
+        $res = $type === 'image' ? wm_upload_image($file) : wm_upload_video($file);
     }
-    $res = $type === 'image' ? wm_upload_image($file) : wm_upload_video($file);
     if (!$res['ok']) {
         return ['ok' => false, 'msg' => (string)$res['msg']];
     }
@@ -364,11 +466,20 @@ function wm_upload_receive(string $type, array $file): array
     ];
 }
 
-/** 删除媒体文件（限定在 uploads 目录内） */
+/**
+ * 删除媒体文件
+ *
+ * 入参既可能是本地相对路径（uploads/...），也可能是云存储的完整访问地址，
+ * 后者交给当前存储驱动处理；驱动未启用时才走本地删除。
+ */
 function wm_media_unlink(string $relPath): bool
 {
-    $relPath = ltrim(str_replace('\\', '/', $relPath), '/');
+    $relPath = trim(str_replace('\\', '/', $relPath));
     if ($relPath === '' || strpos($relPath, '..') !== false) { return false; }
+    if (preg_match('#^https?://#i', $relPath)) {
+        return wm_storage_delete($relPath);
+    }
+    $relPath = ltrim($relPath, '/');
     if (strpos($relPath, 'uploads/') !== 0) { return false; }
     $abs = WM_ROOT . '/' . $relPath;
     $real = realpath($abs);

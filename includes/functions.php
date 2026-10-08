@@ -361,10 +361,51 @@ function wm_blocked_ips(): array
 }
 
 /**
+ * 判断是否为合法的远程文件地址
+ *
+ * 云存储启用后，媒体表里存的是完整访问地址而不是 uploads 相对路径。
+ * 这里只放行 http(s) + 合法主机名 + 无控制字符，其余（javascript:、data: 等）一律拒绝。
+ * @return string 规范化后的地址；非法返回 ''
+ */
+function wm_file_is_url(string $path): string
+{
+    $p = trim($path);
+    if ($p === '' || strlen($p) > 1000) { return ''; }
+    if (!preg_match('#^https?://#i', $p)) { return ''; }
+    if (preg_match('#[\x00-\x20\x7F"\'<>\\\\]#', $p)) { return ''; }
+    $u = parse_url($p);
+    if (!is_array($u) || empty($u['host'])) { return ''; }
+    $scheme = strtolower((string)($u['scheme'] ?? ''));
+    if ($scheme !== 'http' && $scheme !== 'https') { return ''; }
+    $host = (string)$u['host'];
+    if (filter_var(trim($host, '[]'), FILTER_VALIDATE_IP) !== false) {
+        return $p;
+    }
+    if (!preg_match('/^[A-Za-z0-9.\-]{1,255}$/', $host)) { return ''; }
+    return $p;
+}
+
+/**
+ * 生成可直接放进 src/href 的地址
+ * 远程地址原样返回；本地相对路径按 $base 拼接站点前缀。
+ */
+function wm_file_url(string $path, string $base = ''): string
+{
+    $p = trim(str_replace('\\', '/', $path));
+    if ($p === '') { return ''; }
+    if (wm_file_is_url($p) !== '') { return $p; }
+    if ($p[0] === '/') { return $p; }
+    return $base . $p;
+}
+
+/**
  * 校验图片/视频相对路径：格式白名单 + realpath 越界校验，非法返回 ''
+ * 云存储地址原样放行
  */
 function wm_safe_media_path(string $path): string
 {
+    $url = wm_file_is_url($path);
+    if ($url !== '') { return $url; }
     $p = ltrim(str_replace('\\', '/', $path), '/');
     if (!preg_match('#^uploads/(image|video)/\d{4}/\d{2}/[A-Za-z0-9_\-]+\.[A-Za-z0-9]{2,5}$#', $p)) {
         return '';
@@ -382,6 +423,8 @@ function wm_safe_media_path(string $path): string
  */
 function wm_safe_thumb_path(string $path): string
 {
+    $url = wm_file_is_url($path);
+    if ($url !== '') { return $url; }
     $p = ltrim(str_replace('\\', '/', $path), '/');
     if ($p === '' || !preg_match('#^uploads/thumb/\d{4}/\d{2}/[A-Za-z0-9_\-]+\.[A-Za-z0-9]{2,5}$#', $p)) {
         return '';
@@ -434,10 +477,12 @@ function wm_secret_decode(string $stored): string
 }
 
 /**
- * 校验可作为头像 / 封面的上传路径（允许 image 与 thumb），非法返回 ''
+ * 校验可作为头像 / 封面的上传路径（允许 image 与 thumb，以及云存储地址），非法返回 ''
  */
 function wm_safe_display_path(string $path): string
 {
+    $url = wm_file_is_url($path);
+    if ($url !== '') { return $url; }
     $p = ltrim(str_replace('\\', '/', $path), '/');
     if (!preg_match('#^uploads/(image|thumb)/\d{4}/\d{2}/[A-Za-z0-9_\-]+\.[A-Za-z0-9]{2,5}$#', $p)) {
         return '';
@@ -446,10 +491,12 @@ function wm_safe_display_path(string $path): string
 }
 
 /**
- * 校验 favicon 相对路径（仅允许 uploads/site 下的 .ico / .png），非法返回 ''
+ * 校验 favicon 相对路径（仅允许 uploads/site 下的 .ico / .png，以及云存储地址），非法返回 ''
  */
 function wm_safe_favicon_path(string $path): string
 {
+    $url = wm_file_is_url($path);
+    if ($url !== '') { return $url; }
     $p = ltrim(str_replace('\\', '/', $path), '/');
     if (!preg_match('#^uploads/site/[A-Za-z0-9_\-]+\.(ico|png)$#', $p)) {
         return '';
@@ -467,7 +514,8 @@ function wm_favicon_link(string $base = ''): void
     if ($f === '') {
         return;
     }
-    $url = $base . $f;
+    // 云存储启用时 favicon 可能是完整地址，wm_file_url 会原样返回
+    $url = wm_file_url($f, $base);
     echo '<link rel="icon" type="image/x-icon" href="' . e($url) . '">' . "\n";
     echo '<link rel="apple-touch-icon" href="' . e($url) . '">' . "\n";
 }

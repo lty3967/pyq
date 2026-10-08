@@ -126,7 +126,7 @@ $adminAvatar = wm_safe_display_path((string)$admin['avatar']);
 
       <div class="fr"><label>头像</label><div class="fc">
         <div data-single-upload="1" data-target="avatarPath" class="frow" style="align-items:center">
-          <img class="sp-img" src="<?= $adminAvatar !== '' ? '../' . e($adminAvatar) : '' ?>"
+          <img class="sp-img" src="<?= $adminAvatar !== '' ? e(wm_file_url($adminAvatar, '../')) : '' ?>"
                alt="" style="width:64px;height:64px;border-radius:8px;object-fit:cover;border:1px solid #ebebeb;<?= $adminAvatar === '' ? 'display:none' : '' ?>">
           <button class="btn sm ghost sp-btn" type="button">选择图片</button>
           <button class="btn sm ghost sp-clear" type="button">清除</button>

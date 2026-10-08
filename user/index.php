@@ -120,7 +120,7 @@ user_flash();
                             <?php if ($m['type'] === 'video'): ?>
                                 <span class="vtag">视频</span>
                             <?php else: ?>
-                                <img src="../<?= e((string)($m['thumb'] !== '' ? $m['thumb'] : $m['path'])) ?>" alt="" loading="lazy">
+                                <img src="<?= e(wm_file_url((string)($m['thumb'] !== '' ? $m['thumb'] : $m['path']), '../')) ?>" alt="" loading="lazy">
                             <?php endif; ?>
                         <?php endforeach; ?>
                         <?php if (count($ms) > 3): ?><span class="hint">+<?= count($ms) - 3 ?></span><?php endif; ?>

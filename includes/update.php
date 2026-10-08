@@ -59,13 +59,73 @@ function wm_http_get(string $url, int $timeout = 30): array
     return ['ok' => true, 'data' => $body];
 }
 
-/** 拉取并解析 manifest.json */
-function wm_update_fetch_manifest(string $url): array
+/**
+ * 定时检测新版本（后台访问触发，无需 cron）
+ *
+ * 为什么不用 cron：很多虚拟主机 / 宝塔面板并不提供计划任务，
+ * 只能靠「有人进后台时顺手检查」。实现要点：
+ *   1. 用 update_checked_at 记录上次检测时间，间隔不足直接返回，
+ *      因此不是每次访问都发远程请求；
+ *   2. 只在「已登录后台」时触发（见 admin/inc/layout.php），
+ *      避免前台访客触发；
+ *   3. 远程请求用 8 秒短超时，且失败也只记录时间不抛错，
+ *      绝不能因为检测失败拖慢或搞挂后台页面；
+ *   4. 间隔天数由后台「检测更新通知」里的天数设置决定，默认 1 天。
+ *
+ * @return array{ran:bool,has_update?:bool,latest?:string,msg?:string,mailed?:bool}
+ */
+function wm_update_cron_check(int $adminId = 0): array
+{
+    // 已明确关掉邮件通知的站点，连远程请求都不必发
+    if ((string)wm_setting('notify_on_update', '1') !== '1') {
+        return ['ran' => false];
+    }
+    $channel = wm_update_channel();
+    if ($channel === '') {
+        return ['ran' => false];
+    }
+    $days = max(1, (int)wm_setting('update_check_days', '1'));
+    $last = (int)wm_setting('update_checked_at', '0');
+    $now = time();
+    if ($last > 0 && ($now - $last) < $days * 86400) {
+        return ['ran' => false];
+    }
+    // 先落时间戳再请求：即使这次请求失败，也不会把后台刷成高频请求
+    wm_setting_set('update_checked_at', (string)$now);
+
+    $m = wm_update_fetch_manifest($channel, 8);
+    if (!$m['ok']) {
+        error_log('update cron check fail: ' . (string)$m['msg']);
+        return ['ran' => true, 'msg' => '检测失败：' . (string)$m['msg']];
+    }
+    $latest = (string)($m['data']['version'] ?? '');
+    if ($latest === '' || version_compare($latest, WM_VERSION, '<=')) {
+        return ['ran' => true, 'has_update' => false, 'latest' => $latest];
+    }
+    require_once WM_INC . '/mailer.php';
+    $r = wm_notify_update(
+        $latest,
+        WM_VERSION,
+        (string)($m['data']['time'] ?? ''),
+        (string)($m['data']['changelog'] ?? ''),
+        $adminId
+    );
+    return [
+        'ran' => true,
+        'has_update' => true,
+        'latest' => $latest,
+        'mailed' => (bool)$r['ok'],
+        'msg' => (string)$r['msg'],
+    ];
+}
+
+/** 拉取并解析 manifest.json（$timeout 供定时检测用短超时，避免拖慢后台） */
+function wm_update_fetch_manifest(string $url, int $timeout = 20): array
 {
     if ($url === '') {
         return ['ok' => false, 'msg' => '未配置更新通道'];
     }
-    $r = wm_http_get($url, 20);
+    $r = wm_http_get($url, $timeout);
     if (!$r['ok']) {
         return ['ok' => false, 'msg' => $r['msg']];
     }

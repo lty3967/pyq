@@ -89,6 +89,11 @@ wm_head('控制台');
       <tr><th>图片 / 视频数量</th><td><?= $s['images'] ?> 张 / <?= $s['videos'] ?> 个</td></tr>
       <tr><th>总浏览量</th><td><?= $s['views'] ?></td></tr>
       <tr><th>分类数量</th><td><?= $s['categories'] ?></td></tr>
+      <tr><th>存储类型</th><td><?php
+        $storageTypes = wm_storage_types();
+        $curStorage = wm_storage_type();
+        ?><a href="storage.php"><?= e($storageTypes[$curStorage]['name'] ?? '本地存储') ?></a>
+        <?= $curStorage === 'local' ? '<span class="hint">（以上为服务器本机占用）</span>' : '<span class="hint">（新文件存在远端，本机仅保留处理过程中的临时文件）</span>' ?></td></tr>
     </table>
     <?php if ($srv['disk_total'] > 0): ?>
       <div class="bar-wrap">

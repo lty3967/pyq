@@ -9,6 +9,7 @@
 declare(strict_types=1);
 
 require dirname(__DIR__) . '/includes/init.php';
+require_once WM_INC . '/oauth.php';
 
 if (wm_user() !== null) {
     wm_redirect('index.php');
@@ -86,9 +87,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         <h1><?= e((string)wm_setting('site_name', '朋友圈')) ?></h1>
         <p>用户中心</p>
     </div>
+    <?php
+    // 一次性提示：聚合登录跳转 / 回调失败的原因经 wm_flash() 传来，
+    // 本页原先只渲染局部 $error，会把这部分提示整个丢掉，用户将看不到失败原因。
+    $flashHtml = wm_flash_html();
+    ?>
     <?php if ($error !== ''): ?>
         <div class="alert err"><?= e($error) ?></div>
     <?php endif; ?>
+    <?= $flashHtml ?>
     <form method="post" action="login.php" autocomplete="on">
         <?= wm_csrf_field() ?>
         <div class="lf">
@@ -101,6 +108,29 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         </div>
         <button class="lb-btn" type="submit">登 录</button>
     </form>
+<?php
+// 第三方聚合登录入口（后台「聚合登录」开启且数据表就绪时才显示）
+// 注意：这里整条分支链都用替代语法（if(...) : ... elseif(...) : ... endif;），
+// 不能写成 `if (...) { ... } elseif (...):` —— 括号语法与替代语法不可混用，会解析报错。
+$oauthCfg = wm_oauth_cfg();
+$oauthDefs = wm_oauth_methods();
+if (wm_oauth_enabled() && wm_oauth_ready() && $oauthCfg['methods'] !== []):
+    ?>
+    <div class="lb-divider"><span>其他方式登录</span></div>
+    <div class="oauth-btns">
+        <?php foreach ($oauthCfg['methods'] as $mKey):
+            if (!isset($oauthDefs[$mKey])) { continue; }
+            $mDef = $oauthDefs[$mKey]; ?>
+            <a class="oauth-btn" href="oauth.php?type=<?= e($mKey) ?>"
+               style="--oc:<?= e($mDef['color']) ?>" rel="nofollow">
+                <span class="ob-ico" aria-hidden="true"><?= (string)($mDef['icon'] ?? '') ?></span>
+                <span class="ob-txt"><?= e($mDef['name']) ?>登录</span>
+            </a>
+        <?php endforeach; ?>
+    </div>
+<?php elseif ((string)wm_setting('oauth_on', '0') === '1'): ?>
+    <div class="alert warn" style="margin:14px 0 0">聚合登录已开启，但配置不完整或数据库结构未升级，请联系管理员。</div>
+<?php endif; ?>
     <div class="lb-foot">
         <?php if ((string) wm_setting('allow_register', '1') === '1'): ?>
             <a href="register.php">注册账号</a> ·

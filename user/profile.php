@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/layout.php';
+require_once WM_INC . '/oauth.php';
 
 $error = '';
 
@@ -48,12 +49,37 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             wm_flash(true, '密码已修改，请重新登录');
             wm_redirect('login.php');
         }
+    } elseif ($action === 'oauth_unbind') {
+        $bindId = wm_input_int('bind_id');
+        $name = '';
+        foreach (wm_oauth_user_binds((int) $user['id']) as $b) {
+            if ((int) $b['id'] === $bindId) {
+                $name = (string) $b['name'];
+                break;
+            }
+        }
+        if ($name === '') {
+            wm_flash(false, '未找到该绑定记录');
+        } elseif (wm_oauth_unbind((int) $user['id'], $bindId)) {
+            wm_log('解绑快捷登录', (string) $user['username'] . ' 解绑 ' . $name);
+            wm_flash(true, $name . '快捷登录已解绑');
+        } else {
+            wm_flash(false, '解绑失败，请稍后重试');
+        }
+        wm_redirect('profile.php');
     }
 }
 
 user_head('账号设置');
 user_flash();
 $userAvatar = wm_safe_display_path((string)$user['avatar']);
+// 快捷登录绑定：仅在后台开启聚合登录时展示
+$oauthReady = wm_oauth_ready();
+$oauthOn = $oauthReady && wm_oauth_enabled();
+$oauthDefs = wm_oauth_methods();
+$binds = $oauthReady ? wm_oauth_user_binds((int)$user['id']) : [];
+$boundProviders = array_column($binds, 'provider');
+$oauthMethods = $oauthOn ? wm_oauth_cfg()['methods'] : [];
 ?>
 <?php if ($error !== ''): ?>
     <div class="alert err"><?= e($error) ?></div>
@@ -77,7 +103,7 @@ $userAvatar = wm_safe_display_path((string)$user['avatar']);
                 <div class="avatar-editor" data-avatar-editor>
                     <div class="avatar-preview">
                         <?php if ($userAvatar !== ''): ?>
-                            <img id="avatarPreview" src="../<?= e($userAvatar) ?>" alt="当前头像">
+                            <img id="avatarPreview" src="<?= e(wm_file_url($userAvatar, '../')) ?>" alt="当前头像">
                         <?php else: ?>
                             <span id="avatarPreview" class="avatar-placeholder">暂无</span>
                         <?php endif; ?>
@@ -132,8 +158,43 @@ $userAvatar = wm_safe_display_path((string)$user['avatar']);
             </label>
 
             <button class="primary" type="submit">修改密码</button>
-        </form>
-    </section>
+    </form>
+</section>
+
+<?php if ($oauthReady && $oauthOn): ?>
+<section class="panel">
+    <div class="panel-title">快捷登录绑定</div>
+
+    <?php if (!$binds): ?>
+        <div class="alert warn" style="margin:0 0 12px">绑定后可用第三方账号直接登录本站，无需再记密码。绑定的是第三方账号身份，与当前用户名 / 密码账号是同一个账号。</div>
+    <?php endif; ?>
+
+    <?php foreach ($oauthMethods as $mk):
+        if (!isset($oauthDefs[$mk])) { continue; }
+        $md = $oauthDefs[$mk];
+        $info = null;
+        foreach ($binds as $b) { if ((string)$b['provider'] === $mk) { $info = $b; break; } }
+        $bound = $info !== null; ?>
+        <div class="fr oauth-bind">
+            <label><?= e($md['name']) ?>快捷登录</label>
+            <div class="fc frow">
+                <?php if ($bound): ?>
+                    <span class="st on">已绑定<?= (string)$info['nickname'] !== '' ? '：' . e((string)$info['nickname']) : '' ?></span>
+                    <form method="post" action="profile.php" class="inline-form"
+                          data-confirm="解绑后将无法用该第三方账号快捷登录本站，确定解绑？">
+                        <?= wm_csrf_field() ?>
+                        <input type="hidden" name="act" value="oauth_unbind">
+                        <input type="hidden" name="bind_id" value="<?= (int)$info['id'] ?>">
+                        <button class="btn sm ghost" type="submit">解绑</button>
+                    </form>
+                <?php else: ?>
+                    <a class="btn sm" href="oauth.php?type=<?= e($mk) ?>&amp;act=bind">绑定<?= e($md['name']) ?></a>
+                <?php endif; ?>
+            </div>
+        </div>
+    <?php endforeach; ?>
+</section>
+<?php endif; ?>
 </div>
 
 <script>

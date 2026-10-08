@@ -18,7 +18,7 @@ function wm_schema(string $p): array
         "CREATE TABLE IF NOT EXISTS `{$p}user` (
             `id` int unsigned NOT NULL AUTO_INCREMENT, `username` varchar(30) NOT NULL,
             `password` varchar(255) NOT NULL, `nickname` varchar(50) NOT NULL DEFAULT '',
-            `email` varchar(120) NOT NULL DEFAULT '', `avatar` varchar(255) NOT NULL DEFAULT '',
+            `email` varchar(120) NOT NULL DEFAULT '', `avatar` varchar(500) NOT NULL DEFAULT '',
             `signature` varchar(255) NOT NULL DEFAULT '', `status` tinyint NOT NULL DEFAULT 1,
             `blocked_at` datetime DEFAULT NULL, `pass_version` int unsigned NOT NULL DEFAULT 1,
             `last_login_at` datetime DEFAULT NULL, `last_login_ip` varchar(45) NOT NULL DEFAULT '',
@@ -32,7 +32,7 @@ function wm_schema(string $p): array
             `password` varchar(255) NOT NULL,
             `nickname` varchar(50) NOT NULL DEFAULT '',
             `email` varchar(120) NOT NULL DEFAULT '',
-            `avatar` varchar(255) NOT NULL DEFAULT '',
+            `avatar` varchar(500) NOT NULL DEFAULT '',
             `signature` varchar(255) NOT NULL DEFAULT '',
             `role` varchar(20) NOT NULL DEFAULT 'admin',
             `status` tinyint NOT NULL DEFAULT '1',
@@ -91,8 +91,8 @@ function wm_schema(string $p): array
             `post_id` int unsigned NOT NULL DEFAULT '0',
             `user_id` int unsigned NOT NULL DEFAULT '0',
             `type` varchar(10) NOT NULL DEFAULT 'image',
-            `path` varchar(255) NOT NULL,
-            `thumb` varchar(255) NOT NULL DEFAULT '',
+            `path` varchar(500) NOT NULL,
+            `thumb` varchar(500) NOT NULL DEFAULT '',
             `width` int unsigned NOT NULL DEFAULT '0',
             `height` int unsigned NOT NULL DEFAULT '0',
             `size` bigint unsigned NOT NULL DEFAULT '0',
@@ -215,6 +215,23 @@ function wm_schema(string $p): array
             UNIQUE KEY `uk_song` (`platform`,`song_id`),
             KEY `idx_user` (`user_id`,`id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+        // 第三方聚合登录绑定（QQ / 微信快捷登录）
+        // 一个第三方标识只能绑一个本站用户；换登录 API 站点会更换 openid 体系，
+        // 因此后台明确提示「开启后请勿随意更换登录站点」。
+        "CREATE TABLE IF NOT EXISTS `{$p}user_oauth` (
+            `id` int unsigned NOT NULL AUTO_INCREMENT,
+            `user_id` int unsigned NOT NULL DEFAULT '0',
+            `provider` varchar(20) NOT NULL DEFAULT '' COMMENT 'qq/wechat',
+            `openid` varchar(128) NOT NULL DEFAULT '' COMMENT '第三方用户标识',
+            `nickname` varchar(50) NOT NULL DEFAULT '',
+            `avatar` varchar(500) NOT NULL DEFAULT '',
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `last_login_at` datetime DEFAULT NULL,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_provider_openid` (`provider`,`openid`),
+            KEY `idx_user` (`user_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
     ];
 }
 
@@ -256,6 +273,19 @@ function wm_default_settings(): array
         'notify_email'       => '',
         'notify_on_comment'  => '0',
         'notify_on_update'   => '1',
+        // 聚合登录（QQ / 微信快捷登录）
+        'oauth_on'            => '0',
+        'oauth_api'           => '',
+        'oauth_appid'         => '',
+        'oauth_appkey'        => '',
+        'oauth_methods'       => 'qq,wechat',
+        'oauth_auto_register' => '1',
+        // 存储类型
+        'storage_type'        => 'local',
+        'storage_opts'        => '',
+        // 版本自动检测：进入后台时按间隔检查一次，有新版本发邮件提醒站长
+        'update_check_days'   => '1',
+        'update_checked_at'   => '0',
     ];
 }
 

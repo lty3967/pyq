@@ -41,7 +41,7 @@ function wm_avatar_html(string $name, string $avatar, string $cls = 'avatar'): s
 {
     // 统一走路径白名单（旧正则允许 ..，存在被指向其他目录的可能）
     if ($avatar !== '' && wm_safe_display_path($avatar) !== '') {
-        return '<img class="' . e($cls) . '" src="' . e($avatar) . '" alt="" loading="lazy">';
+        return '<img class="' . e($cls) . '" src="' . e(wm_file_url($avatar)) . '" alt="" loading="lazy">';
     }
     $ch = mb_substr($name !== '' ? $name : '友', 0, 1);
     $colors = ['#07c160', '#1989fa', '#ff976a', '#7232dd', '#ee0a24', '#00b8d4', '#fa8c16'];
@@ -105,11 +105,22 @@ function wm_music_card_html(?array $m): string
   <!-- 顶部封面 -->
   <header class="cover">
     <?php if ($cover !== '' && wm_safe_display_path($cover) !== ''): ?>
-      <img class="cover-img" src="<?= e($cover) ?>" alt="">
+      <img class="cover-img" src="<?= e(wm_file_url($cover)) ?>" alt="">
     <?php else: ?>
       <div class="cover-img cover-default"></div>
     <?php endif; ?>
     <div class="cover-mask"></div>
+    <?php
+    // 右上角「拍照」入口（对齐微信朋友圈）：未登录先登录，已登录直接进发布页
+    $cameraHref = $currentUser !== null ? 'user/post.php' : 'user/login.php';
+    $cameraTip  = $currentUser !== null ? '发表动态' : '登录';
+    ?>
+    <a class="cover-camera" href="<?= e($cameraHref) ?>" title="<?= e($cameraTip) ?>" aria-label="<?= e($cameraTip) ?>">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M4 8.5h2.6l1.3-2h8.2l1.3 2H20a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 20 19.5H4A1.5 1.5 0 0 1 2.5 18v-8A1.5 1.5 0 0 1 4 8.5Z"/>
+        <circle cx="12" cy="13.8" r="3.4"/>
+      </svg>
+    </a>
     <a class="cover-user" href="<?= $currentUser !== null ? 'user/profile.php' : 'user/login.php' ?>" aria-label="<?= $currentUser !== null ? '打开个人资料' : '登录账号' ?>">
       <div class="cu-text">
         <div class="cu-name"><?= e($ownerName) ?></div>
@@ -162,7 +173,7 @@ function wm_music_card_html(?array $m): string
               if ($i >= 9) { break; }
               $src = $m['thumb'] !== '' ? (string)$m['thumb'] : (string)$m['path']; ?>
               <div class="cell">
-                <img src="<?= e($src) ?>" data-full="<?= e((string)$m['path']) ?>" alt="" loading="lazy"
+                <img src="<?= e(wm_file_url($src)) ?>" data-full="<?= e(wm_file_url((string)$m['path'])) ?>" alt="" loading="lazy"
                      <?= count($imgs) === 1 && (int)$m['width'] > 0 ? 'class="single"' : '' ?>>
                 <?php if ($i === 8 && count($imgs) > 9): ?><span class="more">+<?= count($imgs) - 9 ?></span><?php endif; ?>
               </div>
@@ -172,8 +183,8 @@ function wm_music_card_html(?array $m): string
 
         <?php foreach ($vids as $m): ?>
           <div class="video-box">
-            <video src="<?= e((string)$m['path']) ?>" controls preload="metadata" playsinline
-                   <?= $m['thumb'] !== '' ? 'poster="' . e((string)$m['thumb']) . '"' : '' ?>></video>
+            <video src="<?= e(wm_file_url((string)$m['path'])) ?>" controls preload="metadata" playsinline
+                   <?= $m['thumb'] !== '' ? 'poster="' . e(wm_file_url((string)$m['thumb'])) . '"' : '' ?>></video>
           </div>
         <?php endforeach; ?>
 

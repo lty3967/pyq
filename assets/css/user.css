@@ -368,6 +368,23 @@ a:hover {
     vertical-align: middle;
 }
 
+/* 快捷登录绑定行
+   .fr 默认 align-items:flex-start 且 label 带 padding-top:9px（为了和 38px 高的
+   输入框对齐），导致行内的状态徽标（20px 行高）浮在顶部、与左侧标签文字错位。
+   这里单独处理：标签去掉上内边距，内容整体竖向居中。 */
+.fr.oauth-bind {
+    align-items: center;
+}
+.fr.oauth-bind > label {
+    padding-top: 0;
+}
+.fr.oauth-bind .frow {
+    align-items: center;
+}
+.fr.oauth-bind .st {
+    line-height: 24px;
+}
+
 .comment-actions .inline-form:last-child {
     margin-right: 0;
 }

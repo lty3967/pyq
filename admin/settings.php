@@ -14,6 +14,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $siteName = wm_input('site_name');
         $siteDesc = wm_input('site_desc');
         $cover = wm_input('cover_image');
+        $favicon = wm_input('favicon');
         $pageSize = wm_input_int('page_size');
 
         $err = '';
@@ -22,6 +23,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         if ($cover !== '' && wm_safe_display_path($cover) === '') {
             $cover = (string)wm_setting('cover_image', '');
         }
+        if ($favicon !== '' && wm_safe_favicon_path($favicon) === '') {
+            $favicon = (string)wm_setting('favicon', '');
+        }
 
         if ($err !== '') {
             wm_flash(false, $err);
@@ -29,6 +33,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             wm_setting_set('site_name', $siteName);
             wm_setting_set('site_desc', $siteDesc);
             wm_setting_set('cover_image', $cover);
+            wm_setting_set('favicon', $favicon);
             wm_setting_set('page_size', (string)max(5, min(30, $pageSize)));
             wm_setting_set('allow_like', wm_input_int('allow_like') === 1 ? '1' : '0');
             wm_setting_set('allow_comment', wm_input_int('allow_comment') === 1 ? '1' : '0');
@@ -74,7 +79,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $known[(string)$r['path']] = true;
             if ((string)$r['thumb'] !== '') { $known[(string)$r['thumb']] = true; }
         }
-        foreach (['owner_avatar', 'cover_image'] as $k) {
+        foreach (['owner_avatar', 'cover_image', 'favicon'] as $k) {
             $v = (string)wm_setting($k, '');
             if ($v !== '') { $known[$v] = true; }
         }
@@ -125,6 +130,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
 $installExists = is_dir(WM_ROOT . '/install');
 $cover = (string)wm_setting('cover_image', '');
+$favicon = (string)wm_setting('favicon', '');
 // 错误日志是静态文件，PHP 无法自我保护，只能靠 Web 服务器禁止访问
 $errLogFile = WM_DATA . '/php-error.log';
 $errLogSize = is_file($errLogFile) ? (int)filesize($errLogFile) : 0;
@@ -152,9 +158,20 @@ wm_head('站点设置');
         <textarea class="inp" id="sd" name="site_desc" rows="2" maxlength="200"><?= e((string)wm_setting('site_desc', '')) ?></textarea>
         <div class="fh">用于前台 SEO 描述</div>
       </div></div>
+      <div class="fr"><label>网站图标</label><div class="fc">
+        <div data-single-upload="1" data-target="faviconPath" data-utype="favicon" class="frow" style="align-items:center">
+          <img class="sp-img" src="<?= $favicon !== '' ? e(wm_file_url($favicon, '../')) : '' ?>" alt=""
+               style="width:32px;height:32px;border-radius:6px;object-fit:cover;border:1px solid #ebebeb;<?= $favicon === '' ? 'display:none' : '' ?>">
+          <button class="btn sm ghost sp-btn" type="button">选择图标</button>
+          <button class="btn sm ghost sp-clear" type="button">清除</button>
+          <input type="file" accept=".ico,image/x-icon,image/png" hidden>
+        </div>
+        <input type="hidden" name="favicon" id="faviconPath" value="<?= e($favicon) ?>">
+        <div class="fh">建议 32×32 或 64×64 的 .ico（也支持 .png），显示在浏览器标签页</div>
+      </div></div>
       <div class="fr"><label>顶部封面</label><div class="fc">
         <div data-single-upload="1" data-target="coverPath" class="frow" style="align-items:center">
-          <img class="sp-img" src="<?= $cover !== '' ? '../' . e($cover) : '' ?>" alt=""
+          <img class="sp-img" src="<?= $cover !== '' ? e(wm_file_url($cover, '../')) : '' ?>" alt=""
                style="width:120px;height:60px;border-radius:6px;object-fit:cover;border:1px solid #ebebeb;<?= $cover === '' ? 'display:none' : '' ?>">
           <button class="btn sm ghost sp-btn" type="button">选择图片</button>
           <button class="btn sm ghost sp-clear" type="button">清除</button>
@@ -176,7 +193,7 @@ wm_head('站点设置');
   </section>
 
   <section class="box">
-    <div class="box-hd"><h2>上传设置</h2></div>
+    <div class="box-hd"><h2>上传设置</h2><span class="hint">图片始终先在本地重编码再推送</span></div>
     <form class="form" method="post" action="settings.php">
       <?= wm_csrf_field() ?>
       <input type="hidden" name="act" value="upload">
@@ -197,7 +214,8 @@ wm_head('站点设置');
         <input class="inp" type="number" name="thumb_size" min="80" max="1200" value="<?= (int)wm_setting('thumb_size', '400') ?>" style="max-width:120px" placeholder="缩略图边长">
         <span style="line-height:38px;color:#909399">质量 / 缩略图边长</span>
       </div></div>
-      <div class="fr"><label></label><div class="fc acts"><button class="btn" type="submit">保存</button></div></div>
+      <div class="fr"><label></label><div class="fc acts"><button class="btn" type="submit">保存</button>
+        <a class="btn ghost" href="storage.php">存储类型设置</a></div></div>
     </form>
   </section>
 </div>

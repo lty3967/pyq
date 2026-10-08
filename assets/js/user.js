@@ -28,6 +28,13 @@
         render();
     }
 
+    // 用户中心位于 /user/ 下，本地相对路径需回到站点根；云存储地址原样使用
+    function mediaUrl(p) {
+        p = String(p || '');
+        if (p === '' || /^(https?:)?\/\//i.test(p) || p.charAt(0) === '/') { return p; }
+        return '../' + p;
+    }
+
     function render() {
         list.innerHTML = '';
 
@@ -46,13 +53,13 @@
 
             if (item.type === 'video') {
                 var video = document.createElement('video');
-                video.src = '../' + item.path;
+                video.src = mediaUrl(item.path);
                 video.muted = true;
                 video.preload = 'metadata';
                 wrapper.appendChild(video);
             } else {
                 var image = document.createElement('img');
-                image.src = '../' + (item.thumb || item.path);
+                image.src = mediaUrl(item.thumb || item.path);
                 image.alt = '';
                 wrapper.appendChild(image);
             }

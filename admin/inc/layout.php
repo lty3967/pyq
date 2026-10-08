@@ -38,6 +38,8 @@ function wm_menu(): array
         ['title' => '系统', 'items' => [
             ['profile.php', '管理员信息', 'user-round'],
             ['mail.php', '发信功能', 'send'],
+            ['oauth.php', '聚合登录', 'log-in'],
+            ['storage.php', '存储设置', 'hard-drive'],
             ['settings.php', '站点设置', 'settings-2'],
             ['update.php', '在线更新', 'refresh-cw'],
             ['logs.php', '操作日志', 'scroll-text'],
@@ -49,6 +51,20 @@ function wm_menu(): array
 function wm_head(string $pageTitle): void
 {
     $admin = wm_admin();
+
+    // 定时检测新版本：放在这里是因为 wm_head() 是所有后台页面的统一入口，
+    // 且此时已确认登录态。函数内部按时间节流，不会每次访问都发远程请求。
+    // 整段包 try/catch：检测失败绝不能影响后台页面本身。
+    // update.php 自身会主动检测并回显结果，这里跳过，避免一次打开发两遍请求。
+    try {
+        if (basename((string)($_SERVER['SCRIPT_NAME'] ?? '')) !== 'update.php') {
+            require_once WM_INC . '/update.php';
+            wm_update_cron_check((int)($admin['id'] ?? 0));
+        }
+    } catch (Throwable $e) {
+        error_log('update cron check error: ' . $e->getMessage());
+    }
+
     $siteName = (string)wm_setting('site_name', '朋友圈');
     $cur = wm_cur();
     $waitCmt = 0;
