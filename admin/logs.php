@@ -31,8 +31,10 @@ $total = (int)wm_value('SELECT COUNT(*) FROM ' . wm_t('log') . ' l' . $where, $p
 $pg = wm_paging($total, $page, $size);
 $page = $pg['page'];
 $offset = $pg['offset'];
-$rows = wm_all('SELECT l.*, a.username FROM ' . wm_t('log') . ' l
+$rows = wm_all('SELECT l.*, a.username AS admin_name, u.username AS user_name, u.nickname AS user_nick
+                FROM ' . wm_t('log') . ' l
                 LEFT JOIN ' . wm_t('admin') . ' a ON a.id = l.admin_id
+                LEFT JOIN ' . wm_t('user') . ' u ON u.id = l.user_id
                 ' . $where . ' ORDER BY l.id DESC LIMIT ' . $size . ' OFFSET ' . $offset, $params);
 
 wm_head('操作日志');
@@ -56,7 +58,16 @@ wm_head('操作日志');
     <?php foreach ($rows as $l): ?>
       <tr>
         <td><?= (int)$l['id'] ?></td>
-        <td><?= $l['username'] !== null ? e((string)$l['username']) : '<span class="hint">系统/游客</span>' ?></td>
+        <td><?php
+            // 操作者归属：管理员 / 前台用户 / 系统或游客
+            if ((string)($l['admin_name'] ?? '') !== '') {
+                echo '<span class="st on">' . e((string)$l['admin_name']) . '</span>';
+            } elseif ((string)($l['user_name'] ?? '') !== '') {
+                echo '用户：' . e(($l['user_nick'] ?? '') !== '' ? (string)$l['user_nick'] : (string)$l['user_name']);
+            } else {
+                echo '<span class="hint">系统/游客</span>';
+            }
+        ?></td>
         <td><?= e((string)$l['action']) ?></td>
         <td><?= e(wm_cut((string)$l['detail'], 70)) ?: '—' ?></td>
         <td><span class="hint"><?= e((string)$l['ip']) ?></span></td>

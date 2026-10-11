@@ -19,18 +19,24 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     wm_require_post(true);
     $act = wm_input('act');
 
-    // 保存自动检测设置
+    // 保存自动检测设置（检测时机已改由 cron_update.php 计划任务驱动）
     if ($act === 'save_check') {
-        $days = max(1, min(30, wm_input_int('update_check_days')));
         $on = wm_input_int('notify_on_update') === 1;
-        wm_setting_set('update_check_days', (string)$days);
         wm_setting_set('notify_on_update', $on ? '1' : '0');
         if ($on) {
-            // 清零上次检测时间，让下一次进后台就立刻检查一次
+            // 清零上次检测时间，让下一次检测立刻生效
             wm_setting_set('update_checked_at', '0');
         }
-        wm_log('修改更新检测设置', '每 ' . $days . ' 天' . ($on ? '，开启邮件提醒' : '，关闭邮件提醒'), (int)$admin['id']);
+        wm_log('修改更新检测设置', $on ? '开启邮件提醒' : '关闭邮件提醒', (int)$admin['id']);
         wm_flash(true, '更新检测设置已保存');
+        wm_redirect('update.php');
+    }
+
+    // 重新生成计划任务地址（密钥泄露或更换域名时使用）
+    if ($act === 'cron_reset') {
+        wm_setting_set('cron_key', wm_random(32));
+        wm_log('重置计划任务地址', 'cron_update.php', (int)$admin['id']);
+        wm_flash(true, '计划任务地址已重新生成，请同步修改宝塔计划任务里的 URL');
         wm_redirect('update.php');
     }
 
@@ -192,9 +198,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
 
 wm_head('在线更新');
 $currentVer = WM_VERSION;
-// 定时检测相关状态：让站长能看到「上次什么时候查的」并调整检测间隔
+// 定时检测相关状态：让站长能看到「上次什么时候查的」与完整计划任务地址
 $checkedAt = (int)wm_setting('update_checked_at', '0');
-$checkedDays = max(1, (int)wm_setting('update_check_days', '1'));
+$cronUrl = wm_site_root_url() . 'cron_update.php?key=' . wm_update_cron_key();
 ?>
 <div class="grid2">
     <section class="box">
@@ -202,32 +208,34 @@ $checkedDays = max(1, (int)wm_setting('update_check_days', '1'));
         <table class="kv">
             <tr><th>当前版本</th><td><b>V<?= e($currentVer) ?></b></td></tr>
             <tr><th>最新版本</th><td><span id="latestVer">检测中…</span></td></tr>
-            <tr><th>自动检测</th><td><?php
-                if ((string)wm_setting('notify_on_update', '1') !== '1') {
-                    echo '<span class="st off">已关闭</span>';
-                } else {
-                    echo '<span class="st on">每 ' . (int)$checkedDays . ' 天</span> <span class="hint">'
-                        . ($checkedAt > 0 ? '上次检测：' . e(date('Y-m-d H:i', $checkedAt)) : '尚未检测')
-                        . '</span>';
-                }
-            ?></td></tr>
+            <tr><th>自动检测</th><td><span class="st on">由计划任务驱动</span> <span class="hint"><?php
+                echo $checkedAt > 0 ? '上次检测：' . e(date('Y-m-d H:i', $checkedAt)) : '尚未检测';
+            ?></span></td></tr>
         </table>
         <div class="acts" style="margin-top:14px">
             <button class="btn" type="button" id="updateBtn">立即更新</button>
             <span id="checkState" class="hint"></span>
         </div>
         <div id="checkResult" style="margin-top:12px"></div>
-        <form class="form" method="post" action="update.php" style="margin-top:14px;border-top:1px solid #f0f0f0;padding-top:14px">
-            <?= wm_csrf_field() ?>
-            <input type="hidden" name="act" value="save_check">
-            <div class="fr"><label>自动检测</label><div class="fc frow">
-                <label class="ck"><input type="checkbox" name="notify_on_update" value="1" <?= (string)wm_setting('notify_on_update', '1') === '1' ? 'checked' : '' ?>> 发现新版本时邮件通知站长</label>
-            </div></div>
-            <div class="fr"><label for="ucd">检测间隔</label><div class="fc frow">
-                <input class="inp" type="number" id="ucd" name="update_check_days" min="1" max="30" value="<?= (int)$checkedDays ?>" style="max-width:110px">
-                <button class="btn" type="submit">保存</button>
-            </div></div>
-        </form>
+        <div style="margin-top:14px;border-top:1px solid #f0f0f0;padding-top:14px">
+            <form class="form" method="post" action="update.php">
+                <?= wm_csrf_field() ?>
+                <input type="hidden" name="act" value="save_check">
+                <div class="fr"><label>邮件通知</label><div class="fc frow">
+                    <label class="ck"><input type="checkbox" name="notify_on_update" value="1" <?= (string)wm_setting('notify_on_update', '1') === '1' ? 'checked' : '' ?>> 检测到新版本时邮件通知站长</label>
+                    <button class="btn" type="submit">保存</button>
+                </div></div>
+            </form>
+            <form class="form" method="post" action="update.php" style="border-top:1px solid #f5f5f5;padding-top:12px;margin-top:4px">
+                <?= wm_csrf_field() ?>
+                <input type="hidden" name="act" value="cron_reset">
+                <div class="fr"><label>计划任务</label><div class="fc">
+                    <code style="display:block;word-break:break-all;background:#fafafa;border:1px solid #eee;border-radius:6px;padding:8px 10px;font-size:12px"><?= e($cronUrl) ?></code>
+                    <div class="fh">自动检测已改为由服务器计划任务驱动，无需打开后台页面：请在宝塔面板「计划任务 → 添加计划任务」中，任务类型选择「访问URL」，URL 地址填写上面的完整链接，<b>建议每天凌晨定时执行一次</b>（如 <code>0 4 * * *</code>）。检测到新版本会自动邮件通知站长；也可直接用浏览器访问该地址手动触发检测。</div>
+                    <button class="btn" type="submit" data-confirm="重新生成后旧地址立即失效，需要同步修改宝塔计划任务里的 URL，确定继续？">重新生成地址</button>
+                </div></div>
+            </form>
+        </div>
     </section>
 
     <section class="box">

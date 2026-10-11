@@ -32,9 +32,11 @@ button,input,select,textarea{font-family:inherit;font-size:14px}
 .oauth-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;height:40px;border-radius:8px;border:1px solid #ebeef5;color:#606266;font-size:14px;background:#fff;transition:border-color .2s,color .2s}
 .oauth-btn:hover{border-color:var(--oc,#07c160);color:var(--oc,#07c160);text-decoration:none}
 .oauth-btn .ob-ico{width:22px;height:22px;border-radius:50%;background:var(--oc,#07c160);color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:none;overflow:hidden}
-/* 品牌图标为内联 SVG：铺满圆形，路径自带白色填充 */
-.oauth-btn .ob-ico svg{width:100%;height:100%;display:block}
+/* 品牌图标为内联 SVG：白色图形居中，四周留出圆底边距（对齐官方品牌样式） */
+.oauth-btn .ob-ico svg{width:64%;height:64%;display:block}
 .oauth-btn .ob-txt{white-space:nowrap}
+/* 评论里的 owo 表情包图片（后台/用户中心展示评论内容时使用） */
+img.owo{height:1.6em;vertical-align:-0.35em;display:inline-block;border-radius:3px}
 
 /* ---------- 布局 ---------- */
 .layout{display:flex;min-height:100vh}

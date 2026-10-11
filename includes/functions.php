@@ -219,7 +219,70 @@ function wm_random(int $len = 16): string
     return bin2hex(random_bytes(max(1, (int)ceil($len / 2))));
 }
 
-/** 文本转安全 HTML：转义 + 换行 + 自动链接 */
+/**
+ * owo 表情包（assets/owo/biaoqing/）
+ *
+ * 文件名即表情名：中文取 UTF-8 字节的十六进制大写（如 哈哈 = E59388E59388_2x.png），
+ * 纯英文名原样保留（如 OK_2x.png / haha_2x.png / what_2x.png）。
+ * 目录扫描一次后静态缓存，同时供服务端渲染与前台表情面板使用。
+ *
+ * @return array<string,string> 表情名 => 文件名
+ */
+function wm_owo_faces(): array
+{
+    static $faces = null;
+    if ($faces !== null) {
+        return $faces;
+    }
+    $faces = [];
+    $rows = @scandir(WM_ROOT . '/assets/owo/biaoqing');
+    if (!is_array($rows)) {
+        return $faces;
+    }
+    foreach ($rows as $f) {
+        if (!is_string($f) || !preg_match('/^(.+)_2x\.png$/i', $f, $m)) {
+            continue;
+        }
+        $name = $m[1];
+        // 中文文件名还原：形如 E5958A 的纯偶长十六进制串按 UTF-8 字节还原；
+        // 还原结果必须是合法 UTF-8 才接受，避免把 OK 这类纯字母名误当十六进制
+        if (preg_match('/^[0-9A-F]+$/', $name) && strlen($name) % 2 === 0) {
+            $bin = @hex2bin($name);
+            if ($bin !== false && $bin !== '' && preg_match('//u', $bin)) {
+                $name = $bin;
+            }
+        }
+        if ($name === '' || mb_strlen($name) > 12) {
+            continue;
+        }
+        $faces[$name] = $m[0];
+    }
+    return $faces;
+}
+
+/** 表情名 => 图片完整 URL 的映射（传给前台表情面板用） */
+function wm_owo_faces_js(): array
+{
+    $base = wm_site_root_url() . 'assets/owo/biaoqing/';
+    $out = [];
+    foreach (wm_owo_faces() as $name => $file) {
+        $out[] = ['c' => $name, 'u' => $base . $file];
+    }
+    return $out;
+}
+
+/** 渲染单个 owo 表情图片；表情名不存在时返回空串（由调用方原样保留文本） */
+function wm_owo_img(string $name): string
+{
+    $faces = wm_owo_faces();
+    if (!isset($faces[$name])) {
+        return '';
+    }
+    $url = wm_site_root_url() . 'assets/owo/biaoqing/' . $faces[$name];
+    return '<img class="owo" src="' . e($url) . '" alt="[' . e($name) . ']" title="[' . e($name) . ']">';
+}
+
+/** 文本转安全 HTML：转义 + 换行 + 自动链接 + [表情名] 渲染为 owo 表情图片 */
 function wm_text_html(string $text): string
 {
     $safe = e($text);
@@ -228,6 +291,16 @@ function wm_text_html(string $text): string
         static function ($m) {
             $url = $m[1];
             return '<a href="' . $url . '" target="_blank" rel="nofollow noopener noreferrer">' . $url . '</a>';
+        },
+        $safe
+    );
+    // [表情名] → <img class="owo">。放在自动链接之后：
+    // 生成的图片地址不会被再次识别成链接，未命中的文本原样保留
+    $safe = preg_replace_callback(
+        '/\[([^\[\]\n]{1,12})\]/u',
+        static function ($m) {
+            $img = wm_owo_img($m[1]);
+            return $img !== '' ? $img : $m[0];
         },
         $safe
     );
@@ -306,13 +379,19 @@ function wm_flash_html(): string
     return '<div class="alert ' . $class . '">' . e((string)$flash['msg']) . '</div>';
 }
 
-/** 写操作日志 */
-function wm_log(string $action, string $detail = '', int $adminId = 0): void
+/** 写操作日志（后台操作传 $adminId，用户操作请用 wm_user_log） */
+function wm_log(string $action, string $detail = '', int $adminId = 0, int $userId = 0): void
 {
+    // 未显式指定操作者时才按会话兜底归属；用户操作必须显式传 userId，
+    // 否则管理员在同一浏览器登录后台时，用户操作会被误记到管理员名下
+    if ($adminId === 0 && $userId === 0) {
+        $adminId = (int)($_SESSION['admin_id'] ?? 0);
+    }
     try {
-        wm_exec('INSERT INTO ' . wm_t('log') . ' (admin_id, action, detail, ip, ua, created_at)
-                 VALUES (?, ?, ?, ?, ?, NOW())', [
-            $adminId ?: (int)($_SESSION['admin_id'] ?? 0),
+        wm_exec('INSERT INTO ' . wm_t('log') . ' (admin_id, user_id, action, detail, ip, ua, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, NOW())', [
+            $adminId,
+            $userId,
             mb_substr($action, 0, 50),
             mb_substr($detail, 0, 500),
             wm_client_ip(),
@@ -321,6 +400,54 @@ function wm_log(string $action, string $detail = '', int $adminId = 0): void
     } catch (Throwable $e) {
         error_log('log fail: ' . $e->getMessage());
     }
+}
+
+/** 写用户侧操作日志（前台用户行为，绝不归属到管理员账号） */
+function wm_user_log(string $action, string $detail = '', int $userId = 0): void
+{
+    if ($userId <= 0) {
+        $userId = wm_user_id();
+    }
+    wm_log($action, $detail, 0, $userId);
+}
+
+/**
+ * 分享音乐卡片（样式对齐微信朋友圈「分享音乐」，首页与 TA 的朋友圈共用）
+ * 封面 + 歌名 + 歌手；能拿到直链音频时额外显示播放按钮。
+ */
+function wm_music_card_html(?array $m): string
+{
+    if ($m === null || $m === []) { return ''; }
+    $url = (string)($m['url'] ?? '');
+    $name = (string)($m['song_name'] ?? '');
+    $artist = (string)($m['artist'] ?? '');
+    $cover = (string)($m['cover'] ?? '');
+    $audio = (string)($m['audio'] ?? '');
+
+    $coverHtml = $cover !== ''
+        ? '<img src="' . e($cover) . '" alt="" loading="lazy">'
+        : '<span class="mc-ph" aria-hidden="true">♪</span>';
+
+    $info = '<div class="mc-name">' . e($name) . '</div>'
+        . '<div class="mc-artist">' . e($artist !== '' ? $artist : '未知歌手') . '</div>';
+
+    $title = $artist !== '' ? $name . ' - ' . $artist : $name;
+    $playBtn = $audio !== ''
+        ? '<button class="mc-play" type="button" data-audio="' . e($audio) . '"'
+            . ' data-name="' . e($title) . '" data-artist="' . e($artist) . '"'
+            . ' data-cover="' . e($cover) . '" aria-label="播放 ' . e($title) . '">'
+            . '<span class="mp-ico">▶</span></button>'
+        : '';
+
+    $coverBlock = $url !== ''
+        ? '<a class="mc-cover" href="' . e($url) . '" target="_blank" rel="nofollow noopener noreferrer">'
+            . $coverHtml . '<span class="mc-note">♪</span></a>'
+        : '<span class="mc-cover">' . $coverHtml . '<span class="mc-note">♪</span></span>';
+    $infoBlock = $url !== ''
+        ? '<a class="mc-info" href="' . e($url) . '" target="_blank" rel="nofollow noopener noreferrer">' . $info . '</a>'
+        : '<span class="mc-info">' . $info . '</span>';
+
+    return '<div class="music-card">' . $coverBlock . $infoBlock . $playBtn . '</div>';
 }
 
 /**

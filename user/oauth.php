@@ -54,7 +54,8 @@ if ($binding) {
 
 $r = wm_oauth_authorize_url($method);
 if (!$r['ok']) {
-    wm_log('聚合登录跳转失败', $method . ' → ' . (string)$r['msg']);
+    // 已登录用户的前台操作，归属到用户名下，不能记到管理员账号
+    wm_user_log('聚合登录跳转失败', $method . ' → ' . (string)$r['msg']);
     wm_flash(false, (string)$r['msg']);
     wm_redirect($backUrl);
 }

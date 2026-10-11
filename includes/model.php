@@ -37,6 +37,14 @@ function wm_post_list(int $page, int $size, int $catId = 0, bool $adminView = fa
         $params[':uid'] = (int)$opt['user_id'];
         $sql = ' WHERE ' . implode(' AND ', $where);
     }
+    // 按发布管理员过滤（space.php 展示站长/管理员的全部朋友圈），
+    // 管理员发布的动态 user_id 恒为 0，这里一并约束避免与用户发布混在一起
+    if (isset($opt['admin_id'])) {
+        $where[] = 'p.admin_id = :aid';
+        $params[':aid'] = (int)$opt['admin_id'];
+        $where[] = 'p.user_id = 0';
+        $sql = ' WHERE ' . implode(' AND ', $where);
+    }
     $total = (int)wm_value('SELECT COUNT(*) FROM ' . wm_t('post') . ' p' . $sql, $params);
 
     // 页码收敛 + 偏移量计算（防止超大 OFFSET）

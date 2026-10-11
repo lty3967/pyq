@@ -69,11 +69,16 @@ button{font-family:inherit}
 .act-btn{margin-left:auto;background:#f7f7f7;border:none;color:#576b95;font-size:13px;font-weight:700;letter-spacing:1px;border-radius:4px;padding:2px 9px;cursor:pointer;line-height:18px}
 .act-btn:active{background:#eaeaea}
 
-.panel{display:flex;gap:0;background:#4c4c4c;border-radius:4px;margin-top:8px;width:fit-content;overflow:hidden}
-.panel .p-btn{background:none;border:none;color:#fff;font-size:13px;padding:7px 14px;display:flex;align-items:center;gap:5px;cursor:pointer}
+/* 点赞/评论面板：弹出在「•••」按钮左侧（样式对齐微信朋友圈） */
+.panel{position:absolute;right:42px;top:50%;transform:translateY(-50%);display:flex;background:#4c4c4c;border-radius:5px;box-shadow:0 2px 10px rgba(0,0,0,.2);overflow:hidden;z-index:6}
+.panel .p-btn{background:none;border:none;color:#fff;font-size:14px;padding:8px 16px;display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap}
 .panel .p-btn+.p-btn{border-left:1px solid #5f5f5f}
-.panel .p-btn .ico{font-size:13px}
+.panel .p-btn .ico{width:15px;height:15px;fill:currentColor;flex:none}
 .panel .like-btn.on{color:#ffdf6b}
+.avatar-link{flex:none;display:block;line-height:0}
+
+/* owo 表情包图片（正文中渲染为行内小图） */
+img.owo{height:1.55em;vertical-align:-0.32em;display:inline-block;border-radius:3px}
 
 .inter{background:#f7f7f7;border-radius:3px;margin-top:8px;padding:6px 10px;font-size:14px;line-height:1.55}
 .inter.hide{display:none}
@@ -122,8 +127,10 @@ button{font-family:inherit}
 .emoji-recent{border-bottom:1px solid #f0f0f0;padding-bottom:6px;margin-bottom:6px;max-height:none}
 .emoji-recent:empty{display:none}
 .emoji-recent .emoji-sub{grid-column:1/-1;font-size:11px;color:#b2b2b2;padding:2px 0 3px}
-.emoji-grid .emoji-cell,.emoji-recent .emoji-cell{border:0;background:none;font-size:21px;line-height:1;padding:5px 0;border-radius:6px;cursor:pointer}
+.emoji-grid .emoji-cell,.emoji-recent .emoji-cell{border:0;background:none;font-size:21px;line-height:1;padding:5px 0;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;min-height:31px}
 .emoji-grid .emoji-cell:hover,.emoji-recent .emoji-cell:hover{background:#f2f2f2}
+/* owo 表情包图片按钮：尺寸适中，保证看得清 */
+.emoji-grid .emoji-cell .emoji-img,.emoji-recent .emoji-cell .emoji-img{width:32px;height:32px;display:block;pointer-events:none}
 .emoji-tip{font-size:11px;color:#b2b2b2;text-align:center;padding-top:6px}
 .emoji-grid::-webkit-scrollbar,.emoji-recent::-webkit-scrollbar{width:5px}
 .emoji-grid::-webkit-scrollbar-thumb,.emoji-recent::-webkit-scrollbar-thumb{background:#ddd;border-radius:3px}
@@ -171,4 +178,38 @@ button{font-family:inherit}
   .grid.g1{max-width:80%}
   .grid.g2,.grid.g4{max-width:74%}
   .video-box{max-width:90%}
+  .sp-thumbs{width:120px}
 }
+
+/* ---------- TA 的朋友圈（space.php，样式对齐微信「个人相册」） ---------- */
+.sp-nav{position:absolute;top:12px;left:10px;z-index:5;width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.32);color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;line-height:1;backdrop-filter:saturate(180%) blur(2px)}
+.sp-nav:hover{background:rgba(0,0,0,.5);color:#fff;text-decoration:none}
+.sp-cover{position:relative;height:230px;background:#333}
+.sp-cover .sp-cover-img{width:100%;height:100%;object-fit:cover;display:block}
+.sp-head{background:#fff;padding:0 16px 16px;border-bottom:1px solid #ececec;position:relative}
+.sp-id{display:flex;align-items:flex-end;gap:12px;margin-top:-26px}
+.sp-avatar{width:70px;height:70px;border-radius:6px;border:2px solid #fff;object-fit:cover;box-shadow:0 1px 6px rgba(0,0,0,.2);flex:none;display:block}
+.sp-avatar.ph{display:flex;align-items:center;justify-content:center;color:#fff;font-size:30px;font-weight:600}
+.sp-idinfo{padding-bottom:4px;min-width:0}
+.sp-name{color:#191919;font-size:18px;font-weight:600}
+.sp-sign{color:#999;font-size:13px;margin-top:2px;word-break:break-word}
+.sp-count{color:#b2b2b2;font-size:12px;margin-top:3px}
+.sp-list{padding:4px 0 12px}
+.sp-item{display:flex;gap:12px;padding:14px 16px;background:#fff;border-bottom:1px solid #f2f2f2}
+.sp-item:last-child{border-bottom:none}
+.sp-date{flex:none;width:58px;color:#b2b2b2;font-size:13px;line-height:1.5;padding-top:2px}
+.sp-item .sp-date .tag-top{margin-left:0;margin-top:4px}
+.sp-main{flex:1;min-width:0}
+.sp-text{font-size:15px;line-height:1.55;color:#191919;word-break:break-word;margin-bottom:8px}
+.sp-text a{color:#576b95;word-break:break-all}
+.sp-stats{color:#b2b2b2;font-size:12px}
+.sp-stats b{color:#576b95;font-weight:600}
+.sp-thumbs{flex:none;width:150px;display:grid;grid-template-columns:repeat(3,1fr);gap:3px;align-content:start;margin:0}
+.sp-thumbs .cell{position:relative;overflow:hidden;border-radius:2px;background:#f5f5f5;aspect-ratio:1/1}
+.sp-thumbs .cell img{width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in}
+/* 视频动态的占位缩略格 */
+.sp-thumbs .sp-video-cell{display:flex;align-items:center;justify-content:center;background:#2b2b2b}
+.sp-thumbs .sp-video-cell img{cursor:default}
+.sp-thumbs .sp-video-cell .sp-play{position:absolute;color:#fff;font-size:18px;background:rgba(0,0,0,.4);width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;text-indent:2px}
+.sp-empty{text-align:center;padding:70px 0;color:#b2b2b2}
+.sp-empty-ico{font-size:44px;margin-bottom:10px}

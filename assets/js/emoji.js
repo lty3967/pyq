@@ -1,12 +1,14 @@
 /*
- * 表情选择器（QQ 风格表情）
+ * 表情选择器（QQ 风格表情 + owo 表情包）
  *
  * 前台评论条、用户中心回复框共用同一个组件：
  *   WmEmoji.attach(textarea, triggerBtn)  —— 挂载后自动在按钮旁生成表情面板，
  *   点击表情插入到光标位置（并把光标停在表情之后），面板点击外部自动收起。
  * 「最近使用」按输入框分组存 localStorage，最多保留 24 个。
- * 全部是 Unicode 表情字符，插入的是真字符而非 [微笑] 这类占位符，
- * 因此无需服务端再做替换，评论渲染与字数统计都不会受影响。
+ *
+ * Unicode 表情插入的是真字符，无需服务端替换；
+ * owo 表情包（window.WM_EMOJI_OWO，由服务端扫描 assets/owo/biaoqing 传入）
+ * 插入的是 [表情名] 占位符，服务端 wm_text_html 会渲染成对应图片。
  */
 (function (win) {
   'use strict';
@@ -64,6 +66,16 @@
              '🎂', '🎉', '🎁', '🕯️', '📌', '📎', '📷', '🎧', '🎬', '🏆', '🚀', '👑']
     }
   ];
+
+  /* owo 表情包：服务端扫描 assets/owo/biaoqing 后传入，形如 [{c:'哈哈',u:'...png'}] */
+  var OWO = (win.WM_EMOJI_OWO || []).filter(function (it) {
+    return it && it.c && it.u;
+  });
+  var OWO_MAP = {};
+  OWO.forEach(function (it) { OWO_MAP['[' + it.c + ']'] = it; });
+  if (OWO.length) {
+    GROUPS.unshift({ name: '表情包', owo: true, list: OWO });
+  }
 
   var RECENT_MAX = 24;
   var panel = null;
@@ -145,8 +157,13 @@
     label.textContent = '最近使用';
     recentBox.appendChild(label);
     list.forEach(function (face) {
-      recentBox.appendChild(makeBtn(face));
+      recentBox.appendChild(makeBtn(owoItem(face) || face));
     });
+  }
+
+  /* 「最近使用」里存的可能是 [表情名] 占位符，命中则还原成图片按钮 */
+  function owoItem(token) {
+    return OWO_MAP[token] || null;
   }
 
   function renderGrid() {
@@ -163,23 +180,36 @@
     var b = document.createElement('button');
     b.type = 'button';
     b.className = 'emoji-cell';
-    b.textContent = face;
-    b.title = face;
-    b.setAttribute('aria-label', '插入表情 ' + face);
-    b.addEventListener('click', function () {
-      insert(face);
-    });
+    if (face && face.c) {
+      // owo 表情包：渲染为图片
+      var img = document.createElement('img');
+      img.src = face.u;
+      img.alt = '[' + face.c + ']';
+      img.className = 'emoji-img';
+      img.draggable = false;
+      b.appendChild(img);
+      b.title = '[' + face.c + ']';
+      b.setAttribute('aria-label', '插入表情包 ' + face.c);
+      b.addEventListener('click', function () { insert(face); });
+    } else {
+      b.textContent = face;
+      b.title = face;
+      b.setAttribute('aria-label', '插入表情 ' + face);
+      b.addEventListener('click', function () { insert(face); });
+    }
     return b;
   }
 
   function insert(face) {
     if (!boundTextarea) { return; }
+    // owo 表情包插入 [表情名] 占位符，服务端负责渲染成图片
+    var token = (face && face.c) ? '[' + face.c + ']' : face;
     var ta = boundTextarea;
     ta.focus();
     var start = typeof ta.selectionStart === 'number' ? ta.selectionStart : ta.value.length;
     var end = typeof ta.selectionEnd === 'number' ? ta.selectionEnd : ta.value.length;
-    ta.value = ta.value.slice(0, start) + face + ta.value.slice(end);
-    var pos = start + face.length;
+    ta.value = ta.value.slice(0, start) + token + ta.value.slice(end);
+    var pos = start + token.length;
     try {
       ta.setSelectionRange(pos, pos);
     } catch (e) {
@@ -189,7 +219,7 @@
     try {
       ta.dispatchEvent(new Event('input', { bubbles: true }));
     } catch (e) {}
-    pushRecent(face);
+    pushRecent(token);
     // 「最近使用」要重建，但不能在这里同步重建：
     // innerHTML = '' 会把用户刚点的那个按钮从 DOM 上摘掉，而此刻点击事件
     // 还在冒泡。冒泡到 document 后 ev.target.closest('.emoji-panel') 对已脱离

@@ -56,7 +56,7 @@ if ($error === '') {
         unset($_SESSION['_oauth_bind_uid']);
         if ($bindUid > 0) {
             $b = wm_oauth_bind($bindUid, (string)$ou['provider'], (string)$ou['openid'], (string)$ou['nickname'], (string)$ou['avatar']);
-            wm_log('绑定快捷登录', $b['ok'] ? '成功' : '失败：' . (string)$b['msg']);
+            wm_user_log('绑定快捷登录', $b['ok'] ? '成功' : '失败：' . (string)$b['msg'], $bindUid);
             wm_flash((bool)$b['ok'], (string)$b['msg']);
             wm_redirect('profile.php');
         }
@@ -73,8 +73,8 @@ if ($error === '') {
             $u = $res['user'];
             $isNew = !empty($res['new']);
             wm_oauth_sign_in($u);
-            wm_log('聚合登录', ($isNew ? '新用户注册并登录：' : '登录成功：')
-                . (string)$u['username'] . '（' . (string)$ou['provider'] . '）');
+            wm_user_log('聚合登录', ($isNew ? '新用户注册并登录：' : '登录成功：')
+                . (string)$u['username'] . '（' . (string)$ou['provider'] . '）', (int)$u['id']);
             wm_flash(true, $isNew ? '欢迎你，已为你自动创建账号' : '登录成功');
             wm_redirect('index.php');
         }

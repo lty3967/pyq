@@ -50,43 +50,9 @@ function wm_avatar_html(string $name, string $avatar, string $cls = 'avatar'): s
 }
 
 /**
- * 分享音乐卡片（样式对齐微信朋友圈「分享音乐」）
- * 封面 + 歌名 + 歌手；能拿到直链音频时额外显示播放按钮。
+ * 分享音乐卡片已下沉到 includes/functions.php 的 wm_music_card_html()，
+ * 首页与「TA 的朋友圈」(space.php) 共用同一份实现。
  */
-function wm_music_card_html(?array $m): string
-{
-    if ($m === null || $m === []) { return ''; }
-    $url = (string)($m['url'] ?? '');
-    $name = (string)($m['song_name'] ?? '');
-    $artist = (string)($m['artist'] ?? '');
-    $cover = (string)($m['cover'] ?? '');
-    $audio = (string)($m['audio'] ?? '');
-
-    $coverHtml = $cover !== ''
-        ? '<img src="' . e($cover) . '" alt="" loading="lazy">'
-        : '<span class="mc-ph" aria-hidden="true">♪</span>';
-
-    $info = '<div class="mc-name">' . e($name) . '</div>'
-        . '<div class="mc-artist">' . e($artist !== '' ? $artist : '未知歌手') . '</div>';
-
-    $title = $artist !== '' ? $name . ' - ' . $artist : $name;
-    $playBtn = $audio !== ''
-        ? '<button class="mc-play" type="button" data-audio="' . e($audio) . '"'
-            . ' data-name="' . e($title) . '" data-artist="' . e($artist) . '"'
-            . ' data-cover="' . e($cover) . '" aria-label="播放 ' . e($title) . '">'
-            . '<span class="mp-ico">▶</span></button>'
-        : '';
-
-    $coverBlock = $url !== ''
-        ? '<a class="mc-cover" href="' . e($url) . '" target="_blank" rel="nofollow noopener noreferrer">'
-            . $coverHtml . '<span class="mc-note">♪</span></a>'
-        : '<span class="mc-cover">' . $coverHtml . '<span class="mc-note">♪</span></span>';
-    $infoBlock = $url !== ''
-        ? '<a class="mc-info" href="' . e($url) . '" target="_blank" rel="nofollow noopener noreferrer">' . $info . '</a>'
-        : '<span class="mc-info">' . $info . '</span>';
-
-    return '<div class="music-card">' . $coverBlock . $infoBlock . $playBtn . '</div>';
-}
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -159,7 +125,21 @@ function wm_music_card_html(?array $m): string
       $gridCls = 'g' . min(9, count($imgs));
     ?>
     <article class="item" data-id="<?= $pid ?>">
-      <?= wm_avatar_html((string)($p['author'] ?: $ownerName), (string)($p['author_avatar'] ?? ''), 'avatar') ?>
+      <?php
+      // 点击头像 → 查看该作者发布的全部朋友圈（space.php）；
+      // 站长/管理员发布的动态（user_id=0, admin_id>0）同样可点开
+      $authorUid = (int)($p['user_id'] ?? 0);
+      $authorAid = (int)($p['admin_id'] ?? 0);
+      $authorName = (string)($p['author'] ?: $ownerName);
+      $avatarHtml = wm_avatar_html($authorName, (string)($p['author_avatar'] ?? ''), 'avatar');
+      if ($authorUid > 0) {
+          echo '<a class="avatar-link" href="space.php?u=' . $authorUid . '" title="查看 ' . e($authorName) . ' 的朋友圈">' . $avatarHtml . '</a>';
+      } elseif ($authorAid > 0) {
+          echo '<a class="avatar-link" href="space.php?a=' . $authorAid . '" title="查看 ' . e($authorName) . ' 的朋友圈">' . $avatarHtml . '</a>';
+      } else {
+          echo $avatarHtml;
+      }
+      ?>
       <div class="body">
         <div class="name"><?= e((string)($p['author'] ?: $ownerName)) ?><?php if ((int)$p['is_top'] === 1): ?><span class="tag-top">置顶</span><?php endif; ?></div>
 
@@ -201,17 +181,22 @@ function wm_music_card_html(?array $m): string
           <?php endif; ?>
           <span class="views" title="浏览量"><?= (int)$p['views'] ?> 次浏览</span>
           <button class="act-btn" type="button" data-act="panel" aria-label="操作">•••</button>
-        </div>
 
-        <div class="panel" hidden>
-          <?php if ($allowLike): ?>
-            <button type="button" class="p-btn like-btn <?= !empty($p['liked']) ? 'on' : '' ?>" data-act="like" data-id="<?= $pid ?>">
-              <span class="ico">♥</span><span class="txt"><?= !empty($p['liked']) ? '取消' : '赞' ?></span>
-            </button>
-          <?php endif; ?>
-          <?php if ($allowComment && (int)$p['allow_comment'] === 1): ?>
-            <button type="button" class="p-btn" data-act="comment" data-id="<?= $pid ?>"><span class="ico">💬</span><span class="txt">评论</span></button>
-          <?php endif; ?>
+          <!-- 点赞 / 评论面板：样式与微信朋友圈一致，弹出在「•••」按钮左侧 -->
+          <div class="panel" hidden>
+            <?php if ($allowLike): ?>
+              <button type="button" class="p-btn like-btn <?= !empty($p['liked']) ? 'on' : '' ?>" data-act="like" data-id="<?= $pid ?>">
+                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                <span class="txt"><?= !empty($p['liked']) ? '取消' : '赞' ?></span>
+              </button>
+            <?php endif; ?>
+            <?php if ($allowComment && (int)$p['allow_comment'] === 1): ?>
+              <button type="button" class="p-btn" data-act="comment" data-id="<?= $pid ?>">
+                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+                <span class="txt">评论</span>
+              </button>
+            <?php endif; ?>
+          </div>
         </div>
 
         <?php $hasLike = (int)$p['likes'] > 0; $hasCmt = !empty($p['comment_list']); ?>
@@ -287,6 +272,7 @@ function wm_music_card_html(?array $m): string
 <div class="toast" id="toast" hidden></div>
 
 <script>window.WM = <?= ejs(['base' => $base, 'token' => wm_csrf_token(), 'needAudit' => $needAudit]) ?>;</script>
+<script>window.WM_EMOJI_OWO = <?= ejs(wm_owo_faces_js()) ?>;</script>
 <script src="assets/js/emoji.js?v=<?= e(WM_ASSET_VER) ?>"></script>
 <script src="assets/js/app.js?v=<?= e(WM_ASSET_VER) ?>"></script>
 </body>

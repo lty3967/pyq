@@ -174,6 +174,7 @@ function wm_schema(string $p): array
         "CREATE TABLE IF NOT EXISTS `{$p}log` (
             `id` bigint unsigned NOT NULL AUTO_INCREMENT,
             `admin_id` int unsigned NOT NULL DEFAULT '0',
+            `user_id` int unsigned NOT NULL DEFAULT '0',
             `action` varchar(50) NOT NULL DEFAULT '',
             `detail` varchar(500) NOT NULL DEFAULT '',
             `ip` varchar(45) NOT NULL DEFAULT '',
@@ -181,6 +182,7 @@ function wm_schema(string $p): array
             `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
             KEY `idx_admin` (`admin_id`,`id`),
+            KEY `idx_user` (`user_id`,`id`),
             KEY `idx_created` (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
 
@@ -283,9 +285,12 @@ function wm_default_settings(): array
         // 存储类型
         'storage_type'        => 'local',
         'storage_opts'        => '',
-        // 版本自动检测：进入后台时按间隔检查一次，有新版本发邮件提醒站长
+        // 版本自动检测：由 cron_update.php 计划任务定时检测（建议每天凌晨一次），
+        // 进后台时也会兜底检查；有新版本发邮件提醒站长
         'update_check_days'   => '1',
         'update_checked_at'   => '0',
+        // 计划任务检测密钥：cron_update.php?key=xxx 校验用，为空时后台首次打开自动生成
+        'cron_key'            => '',
     ];
 }
 

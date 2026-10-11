@@ -239,6 +239,7 @@ user_flash();
         </form>
     </section>
 <?php endif; ?>
+<script>window.WM_EMOJI_OWO = <?= ejs(wm_owo_faces_js()) ?>;</script>
 <script src="../assets/js/emoji.js?v=<?= e(WM_ASSET_VER) ?>"></script>
 <script>
     (function () {

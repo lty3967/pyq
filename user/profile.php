@@ -61,7 +61,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if ($name === '') {
             wm_flash(false, '未找到该绑定记录');
         } elseif (wm_oauth_unbind((int) $user['id'], $bindId)) {
-            wm_log('解绑快捷登录', (string) $user['username'] . ' 解绑 ' . $name);
+            wm_user_log('解绑快捷登录', (string) $user['username'] . ' 解绑 ' . $name, (int) $user['id']);
             wm_flash(true, $name . '快捷登录已解绑');
         } else {
             wm_flash(false, '解绑失败，请稍后重试');

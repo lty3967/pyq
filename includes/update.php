@@ -60,6 +60,23 @@ function wm_http_get(string $url, int $timeout = 30): array
 }
 
 /**
+ * 计划任务（cron）检测密钥
+ *
+ * cron_update.php 通过 URL 访问，必须携带与 wm_setting.cron_key 一致的 key
+ * 才会执行检测，防止被恶意刷爆远程请求。密钥为空时自动生成并落库：
+ * 后台「在线更新」页会显示完整计划任务地址，首次打开即完成初始化。
+ */
+function wm_update_cron_key(): string
+{
+    $k = (string)wm_setting('cron_key', '');
+    if ($k === '' || !preg_match('/^[A-Za-z0-9]{16,64}$/', $k)) {
+        $k = wm_random(32);
+        wm_setting_set('cron_key', $k);
+    }
+    return $k;
+}
+
+/**
  * 定时检测新版本（后台访问触发，无需 cron）
  *
  * 为什么不用 cron：很多虚拟主机 / 宝塔面板并不提供计划任务，
@@ -125,6 +142,9 @@ function wm_update_fetch_manifest(string $url, int $timeout = 20): array
     if ($url === '') {
         return ['ok' => false, 'msg' => '未配置更新通道'];
     }
+    // 追加时间戳参数：CDN / 服务器缓存 / OPcache 之外的静态缓存都可能把
+    // 旧版 manifest.json 缓存住，导致后台「最新版本」迟迟不更新
+    $url .= (strpos($url, '?') === false ? '?' : '&') . '_t=' . time();
     $r = wm_http_get($url, $timeout);
     if (!$r['ok']) {
         return ['ok' => false, 'msg' => $r['msg']];
